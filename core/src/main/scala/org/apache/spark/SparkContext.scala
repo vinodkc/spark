@@ -293,7 +293,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
   // Keeps track of all persisted RDDs
   private[spark] val persistentRdds = {
-    val map: ConcurrentMap[Int, RDD[_]] = new MapMaker().weakValues().makeMap[Int, RDD[_]]()
+    val map: ConcurrentMap[Int, RDD[_]] = new MapMaker().makeMap[Int, RDD[_]]()
     map.asScala
   }
   def statusTracker: SparkStatusTracker = _statusTracker
