@@ -1858,3 +1858,197 @@ select luhn_check(123.456)
 struct<luhn_check(123.456):boolean>
 -- !query output
 false
+
+
+-- !query
+select ngram('abcdefg')
+-- !query schema
+struct<ngram(abcdefg, 3, true):array<string>>
+-- !query output
+["fg ","abc","cde","efg","bcd"," ab","def"]
+
+
+-- !query
+select ngram('abcdefg', 5)
+-- !query schema
+struct<ngram(abcdefg, 5, true):array<string>>
+-- !query output
+[" abcd","abcde","bcdef","defg ","cdefg"]
+
+
+-- !query
+select ngram('abcdefg', 5, false)
+-- !query schema
+struct<ngram(abcdefg, 5, false):array<string>>
+-- !query output
+["abcde","bcdef","cdefg"]
+
+
+-- !query
+select ngram('abcdefg', 5, true)
+-- !query schema
+struct<ngram(abcdefg, 5, true):array<string>>
+-- !query output
+[" abcd","abcde","bcdef","defg ","cdefg"]
+
+
+-- !query
+select ngram(' abcdefg')
+-- !query schema
+struct<ngram( abcdefg, 3, true):array<string>>
+-- !query output
+["fg ","abc","cde","efg","bcd"," ab","def"]
+
+
+-- !query
+select ngram(' abcdefg', 8, false)
+-- !query schema
+struct<ngram( abcdefg, 8, false):array<string>>
+-- !query output
+[]
+
+
+-- !query
+select ngram('abcdefg ')
+-- !query schema
+struct<ngram(abcdefg , 3, true):array<string>>
+-- !query output
+["fg ","abc","cde","efg","bcd"," ab","def"]
+
+
+-- !query
+select ngram(' abcdefg ')
+-- !query schema
+struct<ngram( abcdefg , 3, true):array<string>>
+-- !query output
+["fg ","abc","cde","efg","bcd"," ab","def"]
+
+
+-- !query
+select ngram('abc defg')
+-- !query schema
+struct<ngram(abc defg, 3, true):array<string>>
+-- !query output
+["fg ","c d","abc","efg"," ab","def","bc "," de"]
+
+
+-- !query
+select ngram(1234)
+-- !query schema
+struct<>
+-- !query output
+org.apache.spark.sql.AnalysisException
+{
+  "errorClass" : "DATATYPE_MISMATCH.UNEXPECTED_INPUT_TYPE",
+  "sqlState" : "42K09",
+  "messageParameters" : {
+    "inputSql" : "\"1234\"",
+    "inputType" : "\"INT\"",
+    "paramIndex" : "1",
+    "requiredType" : "\"STRING\"",
+    "sqlExpr" : "\"ngram(1234, 3, true)\""
+  },
+  "queryContext" : [ {
+    "objectType" : "",
+    "objectName" : "",
+    "startIndex" : 8,
+    "stopIndex" : 18,
+    "fragment" : "ngram(1234)"
+  } ]
+}
+
+
+-- !query
+select ngram('')
+-- !query schema
+struct<ngram(, 3, true):array<string>>
+-- !query output
+[]
+
+
+-- !query
+select ngram('  ')
+-- !query schema
+struct<ngram(  , 3, true):array<string>>
+-- !query output
+[]
+
+
+-- !query
+select ngram('a        z')
+-- !query schema
+struct<ngram(a        z, 3, true):array<string>>
+-- !query output
+["a  ","  z"," a "," z ","   "]
+
+
+-- !query
+select ngram('a        z', 6)
+-- !query schema
+struct<ngram(a        z, 6, true):array<string>>
+-- !query output
+[" a    ","      ","a     ","     z","    z "]
+
+
+-- !query
+select ngram('a        z', 6, false)
+-- !query schema
+struct<ngram(a        z, 6, false):array<string>>
+-- !query output
+["      ","a     ","     z"]
+
+
+-- !query
+select ngram(null)
+-- !query schema
+struct<ngram(NULL, 3, true):array<string>>
+-- !query output
+NULL
+
+
+-- !query
+select ngram(null, 6, true)
+-- !query schema
+struct<ngram(NULL, 6, true):array<string>>
+-- !query output
+NULL
+
+
+-- !query
+select ngram('abcdefg', 10)
+-- !query schema
+struct<ngram(abcdefg, 10, true):array<string>>
+-- !query output
+[]
+
+
+-- !query
+select ngram('abcdefg', 10, false)
+-- !query schema
+struct<ngram(abcdefg, 10, false):array<string>>
+-- !query output
+[]
+
+
+-- !query
+select ngram('abcdefg', 0)
+-- !query schema
+struct<ngram(abcdefg, 0, true):array<string>>
+-- !query output
+[]
+
+
+-- !query
+select ngram('abcdefg', -1)
+-- !query schema
+struct<ngram(abcdefg, -1, true):array<string>>
+-- !query output
+[]
+
+
+-- !query
+select ngram('abcdefg', -10)
+-- !query schema
+struct<ngram(abcdefg, -10, true):array<string>>
+-- !query output
+[]

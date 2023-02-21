@@ -3088,3 +3088,55 @@ case class Luhncheck(input: Expression) extends RuntimeReplaceable with Implicit
   override protected def withNewChildrenInternal(
       newChildren: IndexedSeq[Expression]): Expression = copy(newChildren(0))
 }
+
+/**
+ * Function to check if a given number string is a valid Luhn number. Returns true, if the number
+ * string is a valid Luhn number, false otherwise.
+ */
+// scalastyle:off line.size.limit
+@ExpressionDescription(
+  usage = """
+    _FUNC_(input ) - Generates an array of n-grams (substrings of length n) from the given input text.
+  """,
+  arguments = """
+    Arguments:
+      * input - a string expression
+      * n - the length of each n-gram, default value is 3.
+      * pad - whether to pad the input text with spaces on either side before generating n-grams, default value is true.
+  """,
+  examples = """
+    Examples:
+      > SELECT _FUNC_('abcdefg');
+       ["fg ","abc","cde","efg","bcd"," ab","def"]
+      > SELECT _FUNC_('abcdefg', 5);
+       [" abcd","abcde","bcdef","defg ","cdefg"]
+      > SELECT _FUNC_('abcdefg', 5, false);
+       ["abcde","bcdef","cdefg"]
+      > SELECT _FUNC_('abcdefg', 6, false);
+       ["bcdefg","abcdef"]
+  """,
+  since = "3.5.0",
+  group = "string_funcs")
+// scalastyle:on line.size.limit
+case class Ngram(input: Expression, n: Expression, pad: Expression)
+  extends RuntimeReplaceable with ExpectsInputTypes {
+  def this(input: Expression, n: Expression) = this(input, n, Literal(true))
+  def this(input: Expression) = this(input, Literal(3))
+
+  override lazy val replacement: Expression = StaticInvoke(
+    classOf[ExpressionImplUtils],
+    ArrayType(StringType),
+    "ngram",
+    Seq(input, n, pad),
+    inputTypes)
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, IntegerType, BooleanType)
+
+  override def prettyName: String = "ngram"
+
+  override def children: Seq[Expression] = Seq(input, n, pad)
+
+  override protected def withNewChildrenInternal(
+     newChildren: IndexedSeq[Expression]): Expression =
+    copy(newChildren(0), newChildren(1), newChildren(2))
+}

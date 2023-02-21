@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.catalyst.expressions;
 
+import org.apache.spark.sql.catalyst.util.ArrayData;
+import org.apache.spark.sql.catalyst.util.GenericArrayData;
 import org.apache.spark.sql.errors.QueryExecutionErrors;
 import org.apache.spark.unsafe.types.UTF8String;
 
@@ -26,6 +28,9 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * An utility class for constructing expressions.
@@ -62,6 +67,31 @@ public class ExpressionImplUtils {
     }
     // Check if the final sum is divisible by 10.
     return checkSum % 10 == 0;
+  }
+
+  /**
+   * Generates a list of n-grams (substrings of length n) from the given input text.
+   *
+   * @param input the input text
+   * @param n the length of each n-gram
+   * @param pad whether to pad the input text with spaces on either side before generating n-grams
+   * @return a set of unique n-grams generated from the input text
+   */
+  public static ArrayData ngram(UTF8String input, int n, boolean pad) {
+    // Trim the input text to remove leading and trailing whitespace
+    String text = input.toString().trim();
+    // Pad the input text with spaces on either side if necessary
+    if (pad) {
+      text = " " + text + " ";
+    }
+    // Create a set to store the generated n-grams
+    Set<UTF8String> ngrams = new HashSet<>();
+    // Generate n-grams by taking substrings of length n from the input text
+    for (int i = 0; n > 0 && i <= text.length() - n; i++) {
+      ngrams.add(UTF8String.fromString(text.substring(i, i + n)));
+    }
+    // Return the set of unique n-grams
+    return new GenericArrayData(new ArrayList<>(ngrams));
   }
 
   public static byte[] aesEncrypt(byte[] input, byte[] key, UTF8String mode, UTF8String padding) {

@@ -257,3 +257,32 @@ select luhn_check(6011111111111117);
 select luhn_check(6011111111111118);
 select luhn_check(123.456);
 
+-- ngram
+-- basic cases
+select ngram('abcdefg');
+select ngram('abcdefg', 5);
+select ngram('abcdefg', 5, false);
+select ngram('abcdefg', 5, true);
+-- spaces in the beginning/middle/end
+select ngram(' abcdefg');
+select ngram(' abcdefg', 8, false);
+select ngram('abcdefg ');
+select ngram(' abcdefg ');
+select ngram('abc defg');
+-- only string type input allowed
+select ngram(1234);
+-- space
+select ngram('');
+select ngram('  ');
+select ngram('a        z');
+select ngram('a        z', 6);
+select ngram('a        z', 6, false);
+-- null
+select ngram(null);
+select ngram(null, 6, true);
+-- limit test
+select ngram('abcdefg', 10);
+select ngram('abcdefg', 10, false);
+select ngram('abcdefg', 0);
+select ngram('abcdefg', -1);
+select ngram('abcdefg', -10);
