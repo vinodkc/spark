@@ -16,6 +16,7 @@
 #
 import os
 import sys
+import platform
 import warnings
 from collections.abc import Sized
 from functools import reduce
@@ -191,6 +192,15 @@ class SparkSession(SparkConversionMixin):
         _lock = RLock()
 
         def __init__(self) -> None:
+            print(
+                "Using Python version %s (%s, %s)"
+                % (
+                    platform.python_version(),
+                    platform.python_build()[0],
+                    platform.python_build()[1],
+                ),
+                file=sys.stderr,
+            )
             self._options: Dict[str, Any] = {}
 
         @overload

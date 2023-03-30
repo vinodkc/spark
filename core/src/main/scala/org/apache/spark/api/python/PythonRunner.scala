@@ -104,6 +104,7 @@ private[spark] abstract class BasePythonRunner[IN, OUT](
   protected val envVars: java.util.Map[String, String] = funcs.head.funcs.head.envVars
   protected val pythonExec: String = funcs.head.funcs.head.pythonExec
   protected val pythonVer: String = funcs.head.funcs.head.pythonVer
+  logInfo(s"Python version $pythonVer")
 
   // TODO: support accumulator in multiple UDF
   protected val accumulator: PythonAccumulatorV2 = funcs.head.funcs.head.accumulator
