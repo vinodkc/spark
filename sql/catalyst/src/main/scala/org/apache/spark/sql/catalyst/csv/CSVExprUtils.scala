@@ -113,21 +113,28 @@ object CSVExprUtils {
    * @throws IllegalArgumentException if any of the individual input chunks are illegal
    */
   def toDelimiterStr(str: String): String = {
-    var idx = 0
-
-    var delimiter = ""
-
-    while (idx < str.length()) {
-      // if the current character is a backslash, check it plus the next char
-      // in order to use existing escape logic
-      val readAhead = if (str(idx) == '\\') 2 else 1
-      // get the chunk of 1 or 2 input characters to convert to a single delimiter char
-      val chunk = StringUtils.substring(str, idx, idx + readAhead)
-      delimiter += toChar(chunk)
-      // advance the counter by the length of input chunk processed
-      idx += chunk.length()
+    def toNonUnicodeDelimiterStr = {
+      var idx = 0
+      var delimiter = ""
+      while (idx < str.length()) {
+        // if the current character is a backslash, check it plus the next char
+        // in order to use existing escape logic
+        val readAhead = if (str(idx) == '\\') 2 else 1
+        // get the chunk of 1 or 2 input characters to convert to a single delimiter char
+        val chunk = StringUtils.substring(str, idx, idx + readAhead)
+        delimiter += toChar(chunk)
+        // advance the counter by the length of input chunk processed
+        idx += chunk.length()
+      }
+      delimiter.mkString("")
     }
 
-    delimiter.mkString("")
+    str match {
+      // check if unicode character is used as delimiter
+      case s if s.matches("""\\u[a-fA-F0-9]{4}""") =>
+        val codePoint = Integer.parseInt(s.substring(2), 16)
+        if (Character.isDefined(codePoint)) codePoint.toChar.toString else toNonUnicodeDelimiterStr
+      case _ => toNonUnicodeDelimiterStr
+    }
   }
 }

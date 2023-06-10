@@ -81,6 +81,7 @@ abstract class CSVSuite
   private val valueMalformedFile = "test-data/value-malformed.csv"
   private val badAfterGoodFile = "test-data/bad_after_good.csv"
   private val malformedRowFile = "test-data/malformedRow.csv"
+  private val unicodeDelimFile = "test-data/with-unicode-delimiter.csv"
 
   /** Verifies data and schema. */
   private def verifyCars(
@@ -3145,6 +3146,16 @@ abstract class CSVSuite
         spark.read.csv(path.getCanonicalPath),
         Seq(Row("#abc"), Row("\u0000def"), Row("xyz"))
       )
+    }
+  }
+
+  test("SPARK-x: unicode delimiter read write") {
+    val df = spark.read.option("delimiter", "\\u0001").csv(testFile(unicodeDelimFile))
+    checkAnswer(df, Seq(Row("1201", "emp1", "dept1"), Row("1202", "emp2", "dept2")))
+    withTempPath { path =>
+      df.write.option("delimiter", "\\u00FA").csv(path.getCanonicalPath)
+      val df2 = spark.read.option("delimiter", "\\u00FA").csv(path.getCanonicalPath)
+      checkAnswer(df2, Seq(Row("1201", "emp1", "dept1"), Row("1202", "emp2", "dept2")))
     }
   }
 
