@@ -22,6 +22,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.joins.UpdatingSessionsEvaluatorFactory
 import org.apache.spark.sql.execution.streaming.StatefulOperatorPartitioning
 
 /**
@@ -51,10 +52,19 @@ case class UpdatingSessionsExec(
   override protected def doExecute(): RDD[InternalRow] = {
     val inMemoryThreshold = conf.sessionWindowBufferInMemoryThreshold
     val spillThreshold = conf.sessionWindowBufferSpillThreshold
-
-    child.execute().mapPartitions { iter =>
-      new UpdatingSessionsIterator(iter, groupingExpression, sessionExpression,
-        child.output, inMemoryThreshold, spillThreshold)
+    val evaluatorFactory = new UpdatingSessionsEvaluatorFactory(
+      groupingExpression,
+      sessionExpression,
+      child.output,
+      inMemoryThreshold,
+      spillThreshold)
+    if (conf.usePartitionEvaluator) {
+      child.execute().mapPartitionsWithEvaluator(evaluatorFactory)
+    } else {
+      child.execute().mapPartitions { iter =>
+        val evaluator = evaluatorFactory.createEvaluator()
+        evaluator.eval(0, iter)
+      }
     }
   }
 

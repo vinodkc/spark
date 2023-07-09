@@ -656,9 +656,13 @@ class SQLQuerySuite extends QueryTest with SharedSparkSession with AdaptiveSpark
   }
 
   test("approximate count distinct") {
-    checkAnswer(
-      sql("SELECT APPROX_COUNT_DISTINCT(a) FROM testData2"),
-      Row(3))
+    Seq(true, false).foreach { enable =>
+      withSQLConf(SQLConf.USE_PARTITION_EVALUATOR.key -> enable.toString) {
+        checkAnswer(
+          sql("SELECT APPROX_COUNT_DISTINCT(a) FROM testData2"),
+          Row(3))
+      }
+    }
   }
 
   test("approximate count distinct with user provided standard deviation") {
@@ -2823,19 +2827,23 @@ class SQLQuerySuite extends QueryTest with SharedSparkSession with AdaptiveSpark
 
   test("Support filter clause for aggregate function uses SortAggregateExec") {
     withSQLConf(SQLConf.USE_OBJECT_HASH_AGG.key -> "false") {
-      val df = sql("SELECT PERCENTILE(a, 1) FILTER (WHERE b > 1) FROM testData2")
-      val physical = df.queryExecution.sparkPlan
-      val aggregateExpressions = physical.collect {
-        case agg: SortAggregateExec => agg.aggregateExpressions
-      }.flatten
-      aggregateExpressions.foreach { expr =>
-        if (expr.mode == Complete || expr.mode == Partial) {
-          assert(expr.filter.isDefined)
-        } else {
-          assert(expr.filter.isEmpty)
+      Seq(true, false).foreach { enable =>
+        withSQLConf(SQLConf.USE_PARTITION_EVALUATOR.key -> enable.toString) {
+          val df = sql("SELECT PERCENTILE(a, 1) FILTER (WHERE b > 1) FROM testData2")
+          val physical = df.queryExecution.sparkPlan
+          val aggregateExpressions = physical.collect {
+            case agg: SortAggregateExec => agg.aggregateExpressions
+          }.flatten
+          aggregateExpressions.foreach { expr =>
+            if (expr.mode == Complete || expr.mode == Partial) {
+              assert(expr.filter.isDefined)
+            } else {
+              assert(expr.filter.isEmpty)
+            }
+          }
+          checkAnswer(df, Row(3))
         }
       }
-      checkAnswer(df, Row(3))
     }
   }
 

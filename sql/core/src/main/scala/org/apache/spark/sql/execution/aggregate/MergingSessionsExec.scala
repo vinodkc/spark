@@ -19,7 +19,7 @@ package org.apache.spark.sql.execution.aggregate
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Expression, MutableProjection, NamedExpression, SortOrder, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Expression, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.metric.SQLMetrics
@@ -65,36 +65,21 @@ case class MergingSessionsExec(
 
   override protected def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
-    child.execute().mapPartitionsWithIndexInternal { (partIndex, iter) =>
-      // Because the constructor of an aggregation iterator will read at least the first row,
-      // we need to get the value of iter.hasNext first.
-      val hasInput = iter.hasNext
-      if (!hasInput && groupingExpressions.nonEmpty) {
-        // This is a grouped aggregate and the input iterator is empty,
-        // so return an empty iterator.
-        Iterator[UnsafeRow]()
-      } else {
-        val outputIter = new MergingSessionsIterator(
-          partIndex,
-          groupingExpressions,
-          sessionExpression,
-          child.output,
-          iter,
-          aggregateExpressions,
-          aggregateAttributes,
-          initialInputBufferOffset,
-          resultExpressions,
-          (expressions, inputSchema) =>
-            MutableProjection.create(expressions, inputSchema),
-          numOutputRows)
-        if (!hasInput && groupingExpressions.isEmpty) {
-          // There is no input and there is no grouping expressions.
-          // We need to output a single row as the output.
-          numOutputRows += 1
-          Iterator[UnsafeRow](outputIter.outputForEmptyGroupingKeyWithoutInput())
-        } else {
-          outputIter
-        }
+    val evaluatorFactory = new MergingSessionsEvaluatorFactory(
+      groupingExpressions,
+      sessionExpression,
+      child.output,
+      aggregateExpressions,
+      aggregateAttributes,
+      initialInputBufferOffset,
+      resultExpressions,
+      numOutputRows)
+    if (conf.usePartitionEvaluator) {
+      child.execute().mapPartitionsWithEvaluator(evaluatorFactory)
+    } else {
+      child.execute().mapPartitionsWithIndexInternal { (partIndex, iter) =>
+        val evaluator = evaluatorFactory.createEvaluator()
+        evaluator.eval(partIndex, iter)
       }
     }
   }
