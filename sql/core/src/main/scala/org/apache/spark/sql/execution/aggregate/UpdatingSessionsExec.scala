@@ -63,7 +63,7 @@ case class UpdatingSessionsExec(
     } else {
       child.execute().mapPartitions { iter =>
         val evaluator = evaluatorFactory.createEvaluator()
-        evaluator.eval(0, iter)
+        evaluator.eval(0, null)
       }
     }
   }

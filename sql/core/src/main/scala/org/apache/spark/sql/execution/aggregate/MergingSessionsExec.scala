@@ -79,7 +79,7 @@ case class MergingSessionsExec(
     } else {
       child.execute().mapPartitionsWithIndexInternal { (partIndex, iter) =>
         val evaluator = evaluatorFactory.createEvaluator()
-        evaluator.eval(partIndex, iter)
+        evaluator.eval(partIndex, null)
       }
     }
   }
