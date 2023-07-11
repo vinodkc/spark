@@ -61,11 +61,15 @@ class StreamingSessionWindowSuite extends StreamTest
     for (option <- availableOptions) {
       test(s"$name - merging sessions in local partition: ${option._1._2} / " +
         s"provider: ${option._2._2}") {
-        withSQLConf(confPairs ++
-          Seq(
-            option._1._1 -> option._1._2.toString,
-            option._2._1 -> option._2._2): _*) {
-          func
+        Seq(true, false).foreach { enable =>
+          withSQLConf(SQLConf.USE_PARTITION_EVALUATOR.key -> enable.toString) {
+            withSQLConf(confPairs ++
+              Seq(
+                option._1._1 -> option._1._2.toString,
+                option._2._1 -> option._2._2): _*) {
+              func
+            }
+          }
         }
       }
     }
