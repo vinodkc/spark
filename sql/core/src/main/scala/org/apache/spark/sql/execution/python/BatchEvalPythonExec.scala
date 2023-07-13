@@ -36,50 +36,56 @@ case class BatchEvalPythonExec(udfs: Seq[PythonUDF], resultAttrs: Seq[Attribute]
 
   private[this] val jobArtifactUUID = JobArtifactSet.getCurrentJobArtifactState.map(_.uuid)
 
-  protected override def evaluate(
-      funcs: Seq[ChainedPythonFunctions],
-      argOffsets: Array[Array[Int]],
-      iter: Iterator[InternalRow],
-      schema: StructType,
-      context: TaskContext): Iterator[InternalRow] = {
-    EvaluatePython.registerPicklers()  // register pickler for Row
+  override protected def withNewChildInternal(newChild: SparkPlan): BatchEvalPythonExec =
+    copy(child = newChild)
 
-    // Input iterator to Python.
-    val inputIterator = BatchEvalPythonExec.getInputIterator(iter, schema)
+  override protected def getPythonEvaluator: EvalPythonEvaluator = new EvalPythonEvaluator() {
+    override def evaluate(
+        funcs: Seq[ChainedPythonFunctions],
+        argOffsets: Array[Array[Int]],
+        iter: Iterator[InternalRow],
+        schema: StructType,
+        context: TaskContext): Iterator[InternalRow] = {
+      EvaluatePython.registerPicklers() // register pickler for Row
 
-    // Output iterator for results from Python.
-    val outputIterator =
-      new PythonUDFRunner(
-        funcs, PythonEvalType.SQL_BATCHED_UDF, argOffsets, pythonMetrics, jobArtifactUUID)
-      .compute(inputIterator, context.partitionId(), context)
+      // Input iterator to Python.
+      val inputIterator = BatchEvalPythonExec.getInputIterator(iter, schema)
 
-    val unpickle = new Unpickler
-    val mutableRow = new GenericInternalRow(1)
-    val resultType = if (udfs.length == 1) {
-      udfs.head.dataType
-    } else {
-      StructType(udfs.map(u => StructField("", u.dataType, u.nullable)))
-    }
+      // Output iterator for results from Python.
+      val outputIterator =
+        new PythonUDFRunner(
+          funcs,
+          PythonEvalType.SQL_BATCHED_UDF,
+          argOffsets,
+          pythonMetrics,
+          jobArtifactUUID)
+          .compute(inputIterator, context.partitionId(), context)
 
-    val fromJava = EvaluatePython.makeFromJava(resultType)
-
-    outputIterator.flatMap { pickedResult =>
-      val unpickledBatch = unpickle.loads(pickedResult)
-      unpickledBatch.asInstanceOf[java.util.ArrayList[Any]].asScala
-    }.map { result =>
-      pythonMetrics("pythonNumRowsReceived") += 1
-      if (udfs.length == 1) {
-        // fast path for single UDF
-        mutableRow(0) = fromJava(result)
-        mutableRow
+      val unpickle = new Unpickler
+      val mutableRow = new GenericInternalRow(1)
+      val resultType = if (udfs.length == 1) {
+        udfs.head.dataType
       } else {
-        fromJava(result).asInstanceOf[InternalRow]
+        StructType(udfs.map(u => StructField("", u.dataType, u.nullable)))
+      }
+
+      val fromJava = EvaluatePython.makeFromJava(resultType)
+
+      outputIterator.flatMap { pickedResult =>
+        val unpickledBatch = unpickle.loads(pickedResult)
+        unpickledBatch.asInstanceOf[java.util.ArrayList[Any]].asScala
+      }.map { result =>
+        pythonMetrics("pythonNumRowsReceived") += 1
+        if (udfs.length == 1) {
+          // fast path for single UDF
+          mutableRow(0) = fromJava(result)
+          mutableRow
+        } else {
+          fromJava(result).asInstanceOf[InternalRow]
+        }
       }
     }
   }
-
-  override protected def withNewChildInternal(newChild: SparkPlan): BatchEvalPythonExec =
-    copy(child = newChild)
 }
 
 object BatchEvalPythonExec {

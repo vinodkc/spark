@@ -69,37 +69,39 @@ case class ArrowEvalPythonExec(udfs: Seq[PythonUDF], resultAttrs: Seq[Attribute]
   private val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
   private[this] val jobArtifactUUID = JobArtifactSet.getCurrentJobArtifactState.map(_.uuid)
 
-  protected override def evaluate(
-      funcs: Seq[ChainedPythonFunctions],
-      argOffsets: Array[Array[Int]],
-      iter: Iterator[InternalRow],
-      schema: StructType,
-      context: TaskContext): Iterator[InternalRow] = {
-
-    val outputTypes = output.drop(child.output.length).map(_.dataType)
-
-    // DO NOT use iter.grouped(). See BatchIterator.
-    val batchIter = if (batchSize > 0) new BatchIterator(iter, batchSize) else Iterator(iter)
-
-    val columnarBatchIter = new ArrowPythonRunner(
-      funcs,
-      evalType,
-      argOffsets,
-      schema,
-      sessionLocalTimeZone,
-      largeVarTypes,
-      pythonRunnerConf,
-      pythonMetrics,
-      jobArtifactUUID).compute(batchIter, context.partitionId(), context)
-
-    columnarBatchIter.flatMap { batch =>
-      val actualDataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType())
-      assert(outputTypes == actualDataTypes, "Invalid schema from pandas_udf: " +
-        s"expected ${outputTypes.mkString(", ")}, got ${actualDataTypes.mkString(", ")}")
-      batch.rowIterator.asScala
-    }
-  }
-
   override protected def withNewChildInternal(newChild: SparkPlan): SparkPlan =
     copy(child = newChild)
+
+  override def getPythonEvaluator: EvalPythonEvaluator = new EvalPythonEvaluator() {
+    override def evaluate(
+        funcs: Seq[ChainedPythonFunctions],
+        argOffsets: Array[Array[Int]],
+        iter: Iterator[InternalRow],
+        schema: StructType,
+        context: TaskContext): Iterator[InternalRow] = {
+
+      val outputTypes = output.drop(child.output.length).map(_.dataType)
+
+      // DO NOT use iter.grouped(). See BatchIterator.
+      val batchIter = if (batchSize > 0) new BatchIterator(iter, batchSize) else Iterator(iter)
+
+      val columnarBatchIter = new ArrowPythonRunner(
+        funcs,
+        evalType,
+        argOffsets,
+        schema,
+        sessionLocalTimeZone,
+        largeVarTypes,
+        pythonRunnerConf,
+        pythonMetrics,
+        jobArtifactUUID).compute(batchIter, context.partitionId(), context)
+
+      columnarBatchIter.flatMap { batch =>
+        val actualDataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType())
+        assert(outputTypes == actualDataTypes, "Invalid schema from pandas_udf: " +
+          s"expected ${outputTypes.mkString(", ")}, got ${actualDataTypes.mkString(", ")}")
+        batch.rowIterator.asScala
+      }
+    }
+  }
 }
