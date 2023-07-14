@@ -28,12 +28,18 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.util.Utils
 
-class EvalPythonEvaluatorFactory(
+abstract class EvalPythonEvaluatorFactory(
     childOutput: Seq[Attribute],
     udfs: Seq[PythonUDF],
-    output: Seq[Attribute],
-    evalPython: EvalPythonEvaluator)
+    output: Seq[Attribute])
     extends PartitionEvaluatorFactory[InternalRow, InternalRow] {
+
+  protected def evaluate(
+      funcs: Seq[ChainedPythonFunctions],
+      argOffsets: Array[Array[Int]],
+      iter: Iterator[InternalRow],
+      schema: StructType,
+      context: TaskContext): Iterator[InternalRow]
 
   override def createEvaluator(): PartitionEvaluator[InternalRow, InternalRow] =
     new EvalPythonPartitionEvaluator
@@ -97,7 +103,7 @@ class EvalPythonEvaluatorFactory(
       }
 
       val outputRowIterator =
-        evalPython.evaluate(pyFuncs, argOffsets, projectedRowIter, schema, context)
+        evaluate(pyFuncs, argOffsets, projectedRowIter, schema, context)
 
       val joined = new JoinedRow
       val resultProj = UnsafeProjection.create(output, output)

@@ -26,6 +26,7 @@ import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.types.{StructField, StructType}
 
 /**
@@ -39,50 +40,66 @@ case class BatchEvalPythonExec(udfs: Seq[PythonUDF], resultAttrs: Seq[Attribute]
   override protected def withNewChildInternal(newChild: SparkPlan): BatchEvalPythonExec =
     copy(child = newChild)
 
-  override protected def getPythonEvaluator: EvalPythonEvaluator = new EvalPythonEvaluator() {
-    override def evaluate(
-        funcs: Seq[ChainedPythonFunctions],
-        argOffsets: Array[Array[Int]],
-        iter: Iterator[InternalRow],
-        schema: StructType,
-        context: TaskContext): Iterator[InternalRow] = {
-      EvaluatePython.registerPicklers() // register pickler for Row
+  override protected def evaluatorFactory: EvalPythonEvaluatorFactory = {
+    new BatchEvalPythonEvaluatorFactory(
+      child.output,
+      udfs,
+      output,
+      pythonMetrics,
+      jobArtifactUUID)
+  }
+}
 
-      // Input iterator to Python.
-      val inputIterator = BatchEvalPythonExec.getInputIterator(iter, schema)
+class BatchEvalPythonEvaluatorFactory(
+    childOutput: Seq[Attribute],
+    udfs: Seq[PythonUDF],
+    output: Seq[Attribute],
+    pythonMetrics: Map[String, SQLMetric],
+    jobArtifactUUID: Option[String])
+    extends EvalPythonEvaluatorFactory(childOutput, udfs, output) {
 
-      // Output iterator for results from Python.
-      val outputIterator =
-        new PythonUDFRunner(
-          funcs,
-          PythonEvalType.SQL_BATCHED_UDF,
-          argOffsets,
-          pythonMetrics,
-          jobArtifactUUID)
-          .compute(inputIterator, context.partitionId(), context)
+  override def evaluate(
+      funcs: Seq[ChainedPythonFunctions],
+      argOffsets: Array[Array[Int]],
+      iter: Iterator[InternalRow],
+      schema: StructType,
+      context: TaskContext): Iterator[InternalRow] = {
+    EvaluatePython.registerPicklers() // register pickler for Row
 
-      val unpickle = new Unpickler
-      val mutableRow = new GenericInternalRow(1)
-      val resultType = if (udfs.length == 1) {
-        udfs.head.dataType
+    // Input iterator to Python.
+    val inputIterator = BatchEvalPythonExec.getInputIterator(iter, schema)
+
+    // Output iterator for results from Python.
+    val outputIterator =
+      new PythonUDFRunner(
+        funcs,
+        PythonEvalType.SQL_BATCHED_UDF,
+        argOffsets,
+        pythonMetrics,
+        jobArtifactUUID)
+        .compute(inputIterator, context.partitionId(), context)
+
+    val unpickle = new Unpickler
+    val mutableRow = new GenericInternalRow(1)
+    val resultType = if (udfs.length == 1) {
+      udfs.head.dataType
+    } else {
+      StructType(udfs.map(u => StructField("", u.dataType, u.nullable)))
+    }
+
+    val fromJava = EvaluatePython.makeFromJava(resultType)
+
+    outputIterator.flatMap { pickedResult =>
+      val unpickledBatch = unpickle.loads(pickedResult)
+      unpickledBatch.asInstanceOf[java.util.ArrayList[Any]].asScala
+    }.map { result =>
+      pythonMetrics("pythonNumRowsReceived") += 1
+      if (udfs.length == 1) {
+        // fast path for single UDF
+        mutableRow(0) = fromJava(result)
+        mutableRow
       } else {
-        StructType(udfs.map(u => StructField("", u.dataType, u.nullable)))
-      }
-
-      val fromJava = EvaluatePython.makeFromJava(resultType)
-
-      outputIterator.flatMap { pickedResult =>
-        val unpickledBatch = unpickle.loads(pickedResult)
-        unpickledBatch.asInstanceOf[java.util.ArrayList[Any]].asScala
-      }.map { result =>
-        pythonMetrics("pythonNumRowsReceived") += 1
-        if (udfs.length == 1) {
-          // fast path for single UDF
-          mutableRow(0) = fromJava(result)
-          mutableRow
-        } else {
-          fromJava(result).asInstanceOf[InternalRow]
-        }
+        fromJava(result).asInstanceOf[InternalRow]
       }
     }
   }

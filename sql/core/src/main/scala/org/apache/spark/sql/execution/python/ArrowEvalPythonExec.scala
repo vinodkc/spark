@@ -24,8 +24,10 @@ import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.ArrowUtils
+
 
 /**
  * Grouped a iterator into batches.
@@ -63,45 +65,70 @@ case class ArrowEvalPythonExec(udfs: Seq[PythonUDF], resultAttrs: Seq[Attribute]
     evalType: Int)
   extends EvalPythonExec with PythonSQLMetrics {
 
-  private val batchSize = conf.arrowMaxRecordsPerBatch
-  private val sessionLocalTimeZone = conf.sessionLocalTimeZone
-  private val largeVarTypes = conf.arrowUseLargeVarTypes
-  private val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
+
   private[this] val jobArtifactUUID = JobArtifactSet.getCurrentJobArtifactState.map(_.uuid)
 
   override protected def withNewChildInternal(newChild: SparkPlan): SparkPlan =
     copy(child = newChild)
 
-  override def getPythonEvaluator: EvalPythonEvaluator = new EvalPythonEvaluator() {
-    override def evaluate(
-        funcs: Seq[ChainedPythonFunctions],
-        argOffsets: Array[Array[Int]],
-        iter: Iterator[InternalRow],
-        schema: StructType,
-        context: TaskContext): Iterator[InternalRow] = {
+  override protected def evaluatorFactory: EvalPythonEvaluatorFactory = {
+    new ArrowEvalPythonEvaluatorFactory(
+      child.output,
+      udfs,
+      output,
+      conf.arrowMaxRecordsPerBatch,
+      evalType,
+      conf.sessionLocalTimeZone,
+      conf.arrowUseLargeVarTypes,
+      ArrowUtils.getPythonRunnerConfMap(conf),
+      pythonMetrics,
+      jobArtifactUUID)
+  }
+}
 
-      val outputTypes = output.drop(child.output.length).map(_.dataType)
+class ArrowEvalPythonEvaluatorFactory(
+    childOutput: Seq[Attribute],
+    udfs: Seq[PythonUDF],
+    output: Seq[Attribute],
+    batchSize: Int,
+    evalType: Int,
+    sessionLocalTimeZone: String,
+    largeVarTypes: Boolean,
+    pythonRunnerConf: Map[String, String],
+    pythonMetrics: Map[String, SQLMetric],
+    jobArtifactUUID: Option[String])
+    extends EvalPythonEvaluatorFactory(childOutput, udfs, output) {
 
-      // DO NOT use iter.grouped(). See BatchIterator.
-      val batchIter = if (batchSize > 0) new BatchIterator(iter, batchSize) else Iterator(iter)
+  override def evaluate(
+      funcs: Seq[ChainedPythonFunctions],
+      argOffsets: Array[Array[Int]],
+      iter: Iterator[InternalRow],
+      schema: StructType,
+      context: TaskContext): Iterator[InternalRow] = {
 
-      val columnarBatchIter = new ArrowPythonRunner(
-        funcs,
-        evalType,
-        argOffsets,
-        schema,
-        sessionLocalTimeZone,
-        largeVarTypes,
-        pythonRunnerConf,
-        pythonMetrics,
-        jobArtifactUUID).compute(batchIter, context.partitionId(), context)
+    val outputTypes = output.drop(childOutput.length).map(_.dataType)
 
-      columnarBatchIter.flatMap { batch =>
-        val actualDataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType())
-        assert(outputTypes == actualDataTypes, "Invalid schema from pandas_udf: " +
+    // DO NOT use iter.grouped(). See BatchIterator.
+    val batchIter = if (batchSize > 0) new BatchIterator(iter, batchSize) else Iterator(iter)
+
+    val columnarBatchIter = new ArrowPythonRunner(
+      funcs,
+      evalType,
+      argOffsets,
+      schema,
+      sessionLocalTimeZone,
+      largeVarTypes,
+      pythonRunnerConf,
+      pythonMetrics,
+      jobArtifactUUID).compute(batchIter, context.partitionId(), context)
+
+    columnarBatchIter.flatMap { batch =>
+      val actualDataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType())
+      assert(
+        outputTypes == actualDataTypes,
+        "Invalid schema from pandas_udf: " +
           s"expected ${outputTypes.mkString(", ")}, got ${actualDataTypes.mkString(", ")}")
-        batch.rowIterator.asScala
-      }
+      batch.rowIterator.asScala
     }
   }
 }

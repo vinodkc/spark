@@ -57,7 +57,7 @@ trait EvalPythonExec extends UnaryExecNode {
   def udfs: Seq[PythonUDF]
   def resultAttrs: Seq[Attribute]
 
-  protected def getPythonEvaluator: EvalPythonEvaluator
+  protected def evaluatorFactory: EvalPythonEvaluatorFactory
 
   override def output: Seq[Attribute] = child.output ++ resultAttrs
 
@@ -65,14 +65,11 @@ trait EvalPythonExec extends UnaryExecNode {
 
   protected override def doExecute(): RDD[InternalRow] = {
     val inputRDD = child.execute().map(_.copy())
-    val evaluatorFactory =
-      new EvalPythonEvaluatorFactory(child.output, udfs, output, getPythonEvaluator)
     if (conf.usePartitionEvaluator) {
       inputRDD.mapPartitionsWithEvaluator(evaluatorFactory)
     } else {
       inputRDD.mapPartitions { iter =>
-        val evaluator = evaluatorFactory.createEvaluator()
-        evaluator.eval(0, iter)
+        evaluatorFactory.createEvaluator().eval(0, iter)
       }
     }
   }
