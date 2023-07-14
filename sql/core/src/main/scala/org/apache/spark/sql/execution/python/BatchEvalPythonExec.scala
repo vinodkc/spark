@@ -37,9 +37,6 @@ case class BatchEvalPythonExec(udfs: Seq[PythonUDF], resultAttrs: Seq[Attribute]
 
   private[this] val jobArtifactUUID = JobArtifactSet.getCurrentJobArtifactState.map(_.uuid)
 
-  override protected def withNewChildInternal(newChild: SparkPlan): BatchEvalPythonExec =
-    copy(child = newChild)
-
   override protected def evaluatorFactory: EvalPythonEvaluatorFactory = {
     new BatchEvalPythonEvaluatorFactory(
       child.output,
@@ -48,6 +45,9 @@ case class BatchEvalPythonExec(udfs: Seq[PythonUDF], resultAttrs: Seq[Attribute]
       pythonMetrics,
       jobArtifactUUID)
   }
+
+  override protected def withNewChildInternal(newChild: SparkPlan): BatchEvalPythonExec =
+    copy(child = newChild)
 }
 
 class BatchEvalPythonEvaluatorFactory(

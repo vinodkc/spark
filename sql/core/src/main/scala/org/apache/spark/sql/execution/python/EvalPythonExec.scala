@@ -17,14 +17,10 @@
 
 package org.apache.spark.sql.execution.python
 
-import org.apache.spark.TaskContext
-import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.UnaryExecNode
-import org.apache.spark.sql.types.StructType
-
 
 /**
  * A physical plan that evaluates a [[PythonUDF]], one partition of tuples at a time.
@@ -53,7 +49,6 @@ import org.apache.spark.sql.types.StructType
  * RowQueue ALWAYS happened after pushing into it.
  */
 trait EvalPythonExec extends UnaryExecNode {
-
   def udfs: Seq[PythonUDF]
   def resultAttrs: Seq[Attribute]
 
@@ -75,11 +70,3 @@ trait EvalPythonExec extends UnaryExecNode {
   }
 }
 
-abstract class EvalPythonEvaluator {
-  def evaluate(
-      funcs: Seq[ChainedPythonFunctions],
-      argOffsets: Array[Array[Int]],
-      iter: Iterator[InternalRow],
-      schema: StructType,
-      context: TaskContext): Iterator[InternalRow]
-}

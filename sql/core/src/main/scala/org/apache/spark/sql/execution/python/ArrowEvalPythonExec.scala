@@ -28,7 +28,6 @@ import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.ArrowUtils
 
-
 /**
  * Grouped a iterator into batches.
  * This is similar to iter.grouped but returns Iterator[T] instead of Seq[T].
@@ -64,7 +63,6 @@ private[spark] class BatchIterator[T](iter: Iterator[T], batchSize: Int)
 case class ArrowEvalPythonExec(udfs: Seq[PythonUDF], resultAttrs: Seq[Attribute], child: SparkPlan,
     evalType: Int)
   extends EvalPythonExec with PythonSQLMetrics {
-
 
   private[this] val jobArtifactUUID = JobArtifactSet.getCurrentJobArtifactState.map(_.uuid)
 
@@ -124,10 +122,8 @@ class ArrowEvalPythonEvaluatorFactory(
 
     columnarBatchIter.flatMap { batch =>
       val actualDataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType())
-      assert(
-        outputTypes == actualDataTypes,
-        "Invalid schema from pandas_udf: " +
-          s"expected ${outputTypes.mkString(", ")}, got ${actualDataTypes.mkString(", ")}")
+      assert(outputTypes == actualDataTypes, "Invalid schema from pandas_udf: " +
+        s"expected ${outputTypes.mkString(", ")}, got ${actualDataTypes.mkString(", ")}")
       batch.rowIterator.asScala
     }
   }
