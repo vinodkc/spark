@@ -72,11 +72,7 @@ class BatchEvalPythonEvaluatorFactory(
     // Output iterator for results from Python.
     val outputIterator =
       new PythonUDFRunner(
-        funcs,
-        PythonEvalType.SQL_BATCHED_UDF,
-        argOffsets,
-        pythonMetrics,
-        jobArtifactUUID)
+        funcs, PythonEvalType.SQL_BATCHED_UDF, argOffsets, pythonMetrics, jobArtifactUUID)
         .compute(inputIterator, context.partitionId(), context)
 
     val unpickle = new Unpickler
