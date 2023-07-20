@@ -118,6 +118,7 @@ case class RowDataSourceScanExec(
     val evaluatorFactory = new RowDataSourceScanEvaluatorFactory(
       schema,
       numOutputRows)
+
     if (conf.usePartitionEvaluator) {
       rdd.mapPartitionsWithEvaluator(evaluatorFactory)
     } else {
