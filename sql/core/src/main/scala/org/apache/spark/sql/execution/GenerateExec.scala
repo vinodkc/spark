@@ -75,51 +75,23 @@ case class GenerateExec(
   lazy val boundGenerator: Generator = BindReferences.bindReference(generator, child.output)
 
   protected override def doExecute(): RDD[InternalRow] = {
-    // boundGenerator.terminate() should be triggered after all of the rows in the partition
     val numOutputRows = longMetric("numOutputRows")
-    child.execute().mapPartitionsWithIndexInternal { (index, iter) =>
-      val generatorNullRow = new GenericInternalRow(generator.elementSchema.length)
-      val rows = if (requiredChildOutput.nonEmpty) {
+    val inputRDD = child.execute()
+    val evaluatorFactory = new GenerateEvaluatorFactory(
+      child.output,
+      child.outputSet,
+      requiredChildOutput,
+      output,
+      boundGenerator,
+      generator.elementSchema.length,
+      outer,
+      numOutputRows)
 
-        val pruneChildForResult: InternalRow => InternalRow =
-          if (child.outputSet == AttributeSet(requiredChildOutput)) {
-            identity
-          } else {
-            UnsafeProjection.create(requiredChildOutput, child.output)
-          }
-
-        val joinedRow = new JoinedRow
-        iter.flatMap { row =>
-          // we should always set the left (required child output)
-          joinedRow.withLeft(pruneChildForResult(row))
-          val outputRows = boundGenerator.eval(row)
-          if (outer && outputRows.isEmpty) {
-            joinedRow.withRight(generatorNullRow) :: Nil
-          } else {
-            outputRows.toIterator.map(joinedRow.withRight)
-          }
-        } ++ LazyIterator(() => boundGenerator.terminate()).map { row =>
-          // we leave the left side as the last element of its child output
-          // keep it the same as Hive does
-          joinedRow.withRight(row)
-        }
-      } else {
-        iter.flatMap { row =>
-          val outputRows = boundGenerator.eval(row)
-          if (outer && outputRows.isEmpty) {
-            Seq(generatorNullRow)
-          } else {
-            outputRows
-          }
-        } ++ LazyIterator(() => boundGenerator.terminate())
-      }
-
-      // Convert the rows to unsafe rows.
-      val proj = UnsafeProjection.create(output, output)
-      proj.initialize(index)
-      rows.map { r =>
-        numOutputRows += 1
-        proj(r)
+    if (conf.usePartitionEvaluator) {
+      inputRDD.mapPartitionsWithEvaluator(evaluatorFactory)
+    } else {
+      inputRDD.mapPartitionsWithIndexInternal { (index, iter) =>
+        evaluatorFactory.createEvaluator().eval(0, iter)
       }
     }
   }
