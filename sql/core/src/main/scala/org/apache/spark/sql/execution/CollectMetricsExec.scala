@@ -25,6 +25,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.types.DataTypeUtils
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanHelper
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
+import org.apache.spark.sql.execution.joins.CollectMetricsEvaluatorFactory
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -63,25 +64,14 @@ case class CollectMetricsExec(
   override protected def doExecute(): RDD[InternalRow] = {
     val collector = accumulator
     collector.reset()
-    child.execute().mapPartitions { rows =>
-      // Only publish the value of the accumulator when the task has completed. This is done by
-      // updating a task local accumulator ('updater') which will be merged with the actual
-      // accumulator as soon as the task completes. This avoids the following problems during the
-      // heartbeat:
-      // - Correctness issues due to partially completed/visible updates.
-      // - Performance issues due to excessive serialization.
-      val updater = collector.copyAndReset()
-      TaskContext.get().addTaskCompletionListener[Unit] { _ =>
-        if (collector.isZero) {
-          collector.setState(updater)
-        } else {
-          collector.merge(updater)
-        }
-      }
+    val inputRDD = child.execute()
+    val evaluatorFactory = new CollectMetricsEvaluatorFactory(collector)
 
-      rows.map { r =>
-        updater.add(r)
-        r
+    if (conf.usePartitionEvaluator) {
+      inputRDD.mapPartitionsWithEvaluator(evaluatorFactory)
+    } else {
+      inputRDD.mapPartitionsWithIndex { (index, iter) =>
+        evaluatorFactory.createEvaluator().eval(index, iter)
       }
     }
   }

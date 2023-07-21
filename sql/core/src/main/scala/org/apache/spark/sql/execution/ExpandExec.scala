@@ -50,38 +50,16 @@ case class ExpandExec(
   override lazy val references: AttributeSet =
     AttributeSet(projections.flatten.flatMap(_.references))
 
-  private[this] val projection =
-    (exprs: Seq[Expression]) => UnsafeProjection.create(exprs, child.output)
-
   protected override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
+    val inputRDD = child.execute()
+    val evaluatorFactory = new ExpandEvaluatorFactory(projections, child.output, numOutputRows)
 
-    child.execute().mapPartitions { iter =>
-      val groups = projections.map(projection).toArray
-      new Iterator[InternalRow] {
-        private[this] var result: InternalRow = _
-        private[this] var idx = -1  // -1 means the initial state
-        private[this] var input: InternalRow = _
-
-        override final def hasNext: Boolean = (-1 < idx && idx < groups.length) || iter.hasNext
-
-        override final def next(): InternalRow = {
-          if (idx <= 0) {
-            // in the initial (-1) or beginning(0) of a new input row, fetch the next input tuple
-            input = iter.next()
-            idx = 0
-          }
-
-          result = groups(idx)(input)
-          idx += 1
-
-          if (idx == groups.length && iter.hasNext) {
-            idx = 0
-          }
-
-          numOutputRows += 1
-          result
-        }
+    if (conf.usePartitionEvaluator) {
+      inputRDD.mapPartitionsWithEvaluator(evaluatorFactory)
+    } else {
+      inputRDD.mapPartitionsWithIndex { (index, iter) =>
+        evaluatorFactory.createEvaluator().eval(index, iter)
       }
     }
   }
