@@ -115,9 +115,7 @@ case class RowDataSourceScanExec(
   protected override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
 
-    val evaluatorFactory = new RowDataSourceScanEvaluatorFactory(
-      schema,
-      numOutputRows)
+    val evaluatorFactory = new RowDataSourceScanEvaluatorFactory(schema, numOutputRows)
 
     if (conf.usePartitionEvaluator) {
       rdd.mapPartitionsWithEvaluator(evaluatorFactory)
@@ -565,10 +563,8 @@ case class FileSourceScanExec(
 
   protected override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
-    val evaluatorFactory = new FileSourceScanEvaluatorFactory(
-      schema,
-      numOutputRows,
-      needsUnsafeRowConversion)
+    val evaluatorFactory =
+      new FileSourceScanEvaluatorFactory(schema, numOutputRows, needsUnsafeRowConversion)
 
     if (conf.usePartitionEvaluator) {
       inputRDD.mapPartitionsWithEvaluator(evaluatorFactory)
@@ -582,9 +578,7 @@ case class FileSourceScanExec(
   protected override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = longMetric("numOutputRows")
     val scanTime = longMetric("scanTime")
-    val evaluatorFactory = new FileSourceColumnarScanEvaluatorFactory(
-      numOutputRows,
-      scanTime)
+    val evaluatorFactory = new FileSourceColumnarScanEvaluatorFactory(numOutputRows, scanTime)
     val columnarBatchRDD = inputRDD.asInstanceOf[RDD[ColumnarBatch]]
 
     if (conf.usePartitionEvaluator) {

@@ -26,16 +26,13 @@ import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class RowDataSourceScanEvaluatorFactory(
-                                         schema: StructType,
-                                         numOutputRows: SQLMetric)
-  extends PartitionEvaluatorFactory[InternalRow, InternalRow] {
+class RowDataSourceScanEvaluatorFactory(schema: StructType, numOutputRows: SQLMetric)
+    extends PartitionEvaluatorFactory[InternalRow, InternalRow] {
   override def createEvaluator(): PartitionEvaluator[InternalRow, InternalRow] =
     new RowDataSourceScanEvaluator
 
   private class RowDataSourceScanEvaluator extends PartitionEvaluator[InternalRow, InternalRow] {
-    override def eval(
-                       index: Int, inputs: Iterator[InternalRow]*): Iterator[InternalRow] = {
+    override def eval(index: Int, inputs: Iterator[InternalRow]*): Iterator[InternalRow] = {
       val iter = inputs.head
       val proj = UnsafeProjection.create(schema)
       proj.initialize(index)
@@ -48,46 +45,42 @@ class RowDataSourceScanEvaluatorFactory(
 }
 
 class FileSourceScanEvaluatorFactory(
-                                         schema: StructType,
-                                         numOutputRows: SQLMetric,
-                                         needsUnsafeRowConversion: Boolean)
-  extends PartitionEvaluatorFactory[InternalRow, InternalRow] {
+    schema: StructType,
+    numOutputRows: SQLMetric,
+    needsUnsafeRowConversion: Boolean)
+    extends PartitionEvaluatorFactory[InternalRow, InternalRow] {
   override def createEvaluator(): PartitionEvaluator[InternalRow, InternalRow] =
     new FileSourceScanEvaluator
 
   private class FileSourceScanEvaluator extends PartitionEvaluator[InternalRow, InternalRow] {
-    override def eval(
-                       index: Int, inputs: Iterator[InternalRow]*): Iterator[InternalRow] = {
+    override def eval(index: Int, inputs: Iterator[InternalRow]*): Iterator[InternalRow] = {
       val iter = inputs.head
       if (needsUnsafeRowConversion) {
-          val toUnsafe = UnsafeProjection.create(schema)
-          toUnsafe.initialize(index)
-          iter.map { row =>
-            numOutputRows += 1
-            toUnsafe(row)
-          }
+        val toUnsafe = UnsafeProjection.create(schema)
+        toUnsafe.initialize(index)
+        iter.map { row =>
+          numOutputRows += 1
+          toUnsafe(row)
+        }
       } else {
-          iter.map { row =>
-            numOutputRows += 1
-            row
-          }
+        iter.map { row =>
+          numOutputRows += 1
+          row
+        }
       }
     }
   }
 }
 
-class FileSourceColumnarScanEvaluatorFactory(
-                                      numOutputRows: SQLMetric,
-                                      scanTime: SQLMetric)
-  extends PartitionEvaluatorFactory[ColumnarBatch, ColumnarBatch] {
+class FileSourceColumnarScanEvaluatorFactory(numOutputRows: SQLMetric, scanTime: SQLMetric)
+    extends PartitionEvaluatorFactory[ColumnarBatch, ColumnarBatch] {
   override def createEvaluator(): PartitionEvaluator[ColumnarBatch, ColumnarBatch] =
     new FileSourceColumnarScanEvaluator
 
   private class FileSourceColumnarScanEvaluator
-    extends PartitionEvaluator[ColumnarBatch, ColumnarBatch] {
+      extends PartitionEvaluator[ColumnarBatch, ColumnarBatch] {
 
-    override def eval(
-                       index: Int, inputs: Iterator[ColumnarBatch]*): Iterator[ColumnarBatch] = {
+    override def eval(index: Int, inputs: Iterator[ColumnarBatch]*): Iterator[ColumnarBatch] = {
       val batches = inputs.head
       new Iterator[ColumnarBatch] {
 
