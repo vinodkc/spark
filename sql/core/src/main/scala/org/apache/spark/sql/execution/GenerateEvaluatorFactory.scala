@@ -24,7 +24,7 @@ import org.apache.spark.sql.execution.metric.SQLMetric
 
 class GenerateEvaluatorFactory(
     childOutput: Seq[Attribute],
-    childOutputSet: AttributeSet,
+    sameOutputSet: Boolean,
     requiredChildOutput: Seq[Attribute],
     output: Seq[Attribute],
     boundGenerator: Generator,
@@ -45,7 +45,7 @@ class GenerateEvaluatorFactory(
       val rows = if (requiredChildOutput.nonEmpty) {
 
         val pruneChildForResult: InternalRow => InternalRow =
-          if (childOutputSet == AttributeSet(requiredChildOutput)) {
+          if (sameOutputSet) {
             identity
           } else {
             UnsafeProjection.create(requiredChildOutput, childOutput)
