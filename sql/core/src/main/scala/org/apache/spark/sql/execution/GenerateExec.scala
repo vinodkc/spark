@@ -77,9 +77,10 @@ case class GenerateExec(
   protected override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
     val inputRDD = child.execute()
+    val sameOutputSet: Boolean = child.outputSet == AttributeSet(requiredChildOutput)
     val evaluatorFactory = new GenerateEvaluatorFactory(
       child.output,
-      child.outputSet,
+      sameOutputSet,
       requiredChildOutput,
       output,
       boundGenerator,
