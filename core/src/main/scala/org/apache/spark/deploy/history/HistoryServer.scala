@@ -24,6 +24,7 @@ import javax.servlet.http.{HttpServlet, HttpServletRequest, HttpServletResponse}
 import scala.util.control.NonFatal
 import scala.xml.Node
 
+import org.apache.hadoop.util.JvmPauseMonitor
 import org.eclipse.jetty.servlet.{ServletContextHandler, ServletHolder}
 
 import org.apache.spark.{SecurityManager, SparkConf}
@@ -71,6 +72,8 @@ class HistoryServer(
 
   // and its metrics, for testing as well as monitoring
   val cacheMetrics = appCache.metrics
+
+  val jvmPauseMonitor = new JvmPauseMonitor()
 
   private val loaderServlet = new HttpServlet {
     protected override def doGet(req: HttpServletRequest, res: HttpServletResponse): Unit = {
@@ -147,6 +150,8 @@ class HistoryServer(
    * this UI with the event logs in the provided base directory.
    */
   def initialize(): Unit = {
+    jvmPauseMonitor.init(SparkHadoopUtil.get.newConfiguration(conf))
+    jvmPauseMonitor.start()
     attachPage(new HistoryPage(this))
 
     attachHandler(ApiRootResource.getServletHandler(this))
@@ -167,6 +172,7 @@ class HistoryServer(
   /** Stop the server and close the file system. */
   override def stop(): Unit = {
     super.stop()
+    jvmPauseMonitor.stop()
     provider.stop()
   }
 
