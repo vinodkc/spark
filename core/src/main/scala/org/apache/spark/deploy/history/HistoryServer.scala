@@ -73,7 +73,8 @@ class HistoryServer(
   // and its metrics, for testing as well as monitoring
   val cacheMetrics = appCache.metrics
 
-  val jvmPauseMonitor = new JvmPauseMonitor()
+  // Jvm pause monitor to log GC pauses
+  private val jvmPauseMonitor = new JvmPauseMonitor()
 
   private val loaderServlet = new HttpServlet {
     protected override def doGet(req: HttpServletRequest, res: HttpServletResponse): Unit = {
