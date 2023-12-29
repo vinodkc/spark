@@ -211,7 +211,7 @@ private[spark] object HadoopFSUtils extends Logging {
           new Iterator[LocatedFileStatus]() {
             def next(): LocatedFileStatus = remoteIter.next
             def hasNext: Boolean = remoteIter.hasNext
-          }.filterNot(status => shouldFilterOutPathName(status.getPath.getName)).toList
+          }.toList
         case _ => fs.listStatus(path).toList
       }
     } catch {
