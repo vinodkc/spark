@@ -200,7 +200,7 @@ private[spark] object HadoopFSUtils extends Logging {
 
     // Note that statuses only include FileStatus for the files and dirs directly under path,
     // and does not include anything else recursively.
-    val statuses: List[FileStatus] = try {
+    val statuses: Array[FileStatus] = try {
       fs match {
         // DistributedFileSystem overrides listLocatedStatus to make 1 single call to namenode
         // to retrieve the file status with the file block location. The reason to still fallback
@@ -211,8 +211,8 @@ private[spark] object HadoopFSUtils extends Logging {
           new Iterator[LocatedFileStatus]() {
             def next(): LocatedFileStatus = remoteIter.next
             def hasNext: Boolean = remoteIter.hasNext
-          }.toList
-        case _ => fs.listStatus(path).toList
+          }.toArray
+        case _ => fs.listStatus(path)
       }
     } catch {
       // If we are listing a root path for SQL (e.g. a top level directory of a table), we need to
@@ -236,7 +236,7 @@ private[spark] object HadoopFSUtils extends Logging {
       // fail-fast on the non-root cases. For more info see the SPARK-27676 review discussion.
       case _: FileNotFoundException if isRootPath || ignoreMissingFiles =>
         logWarning(s"The directory $path was not found. Was it deleted very recently?")
-        List.empty[FileStatus]
+        Array.empty[FileStatus]
     }
 
     val filteredStatuses =
@@ -248,7 +248,7 @@ private[spark] object HadoopFSUtils extends Logging {
         case Some(context) if dirs.length > parallelismThreshold =>
           parallelListLeafFilesInternal(
             context,
-            dirs.map(_.getPath),
+            dirs.map(_.getPath).toImmutableArraySeq,
             hadoopConf = hadoopConf,
             filter = filter,
             isRootLevel = false,
@@ -269,7 +269,7 @@ private[spark] object HadoopFSUtils extends Logging {
               isRootPath = false,
               parallelismThreshold = parallelismThreshold,
               parallelismMax = parallelismMax)
-          }
+          }.toImmutableArraySeq
       }
       val filteredTopLevelFiles = if (filter != null) {
         topLevelFiles.filter(f => filter.accept(f.getPath))
@@ -327,7 +327,7 @@ private[spark] object HadoopFSUtils extends Logging {
         s"the following files were missing during file scan:\n  ${missingFiles.mkString("\n  ")}")
     }
 
-    resolvedLeafStatuses
+    resolvedLeafStatuses.toImmutableArraySeq
   }
   // scalastyle:on argcount
 
