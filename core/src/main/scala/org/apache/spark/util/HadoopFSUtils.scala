@@ -33,7 +33,7 @@ import org.apache.spark.metrics.source.HiveCatalogMetrics
 import org.apache.spark.util.ArrayImplicits._
 
 /**
- * Utility functions to simplify and speed-up file listing.
+ * Utility functions to simplify and speed-up file listing- test.
  */
 private[spark] object HadoopFSUtils extends Logging {
   /**
