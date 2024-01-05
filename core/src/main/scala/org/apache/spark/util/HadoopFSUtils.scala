@@ -90,13 +90,13 @@ private[spark] object HadoopFSUtils extends Logging {
     try {
       val prefixLength = path.toString.length
       val remoteIter = path.getFileSystem(hadoopConf).listFiles(path, true)
-      val statuses = new Iterator[LocatedFileStatus]() {
+      val statues = new Iterator[LocatedFileStatus]() {
         def next(): LocatedFileStatus = remoteIter.next
         def hasNext: Boolean = remoteIter.hasNext
       }.filterNot(status => shouldFilterOutPath(status.getPath.toString.substring(prefixLength)))
         .filter(f => filter.accept(f.getPath))
         .toList
-      Seq((path, statuses))
+      Seq((path, statues))
     } catch {
       case _: FileNotFoundException =>
         logWarning(s"The root directory $path was not found. Was it deleted very recently?")
@@ -207,15 +207,11 @@ private[spark] object HadoopFSUtils extends Logging {
         // to listStatus is because the default implementation would potentially throw a
         // FileNotFoundException which is better handled by doing the lookups manually below.
         case (_: DistributedFileSystem | _: ViewFileSystem) if !ignoreLocality =>
-          val statusesBuffer = mutable.ListBuffer[FileStatus]()
-          val statusesIterator: RemoteIterator[LocatedFileStatus] = fs.listLocatedStatus(path)
-          while (statusesIterator.hasNext) {
-            val status = statusesIterator.next()
-            if (filter.accept(status.getPath)) {
-              statusesBuffer += status
-            }
-          }
-          statusesBuffer.toList
+          val remoteIter = fs.listLocatedStatus(path)
+          new Iterator[LocatedFileStatus]() {
+            def next(): LocatedFileStatus = remoteIter.next
+            def hasNext: Boolean = remoteIter.hasNext
+          }.toList
         case _ => fs.listStatus(path).toList
       }
     } catch {
