@@ -865,7 +865,8 @@ class RocksDBFileManager(
     lazy val files = Option(Utils.recursiveList(dir)).getOrElse(Array.empty).map { f =>
       s"${f.getAbsolutePath} - ${f.length()} bytes"
     }
-    logInfo(msg + log" - ${MDC(LogKeys.NUM_FILES, files.length)} files\n\t" +
+    logInfo(msg + log" - ${MDC(LogKeys.NUM_FILES, files.length)} files")
+    logDebug(log"Files are:\n\t" +
       log"${MDC(LogKeys.FILE_NAME, files.mkString("\n\t"))}")
   }
 
