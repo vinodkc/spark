@@ -827,7 +827,7 @@ class RocksDBFileManager(
    * Any error while writing will ensure that the file is not written.
    */
   private def zipToDfsFile(files: Seq[File], dfsZipFile: Path): Unit = {
-    lazy val filesStr = s"$dfsZipFile\n\t${files.mkString("\n\t")}"
+    lazy val fileListStr = s"${files.mkString("\n\t")}"
     var in: InputStream = null
     val out = fm.createAtomic(dfsZipFile, overwriteIfPossible = true)
     var totalBytes = 0L
@@ -843,7 +843,8 @@ class RocksDBFileManager(
       }
       zout.close()  // so that any error in closing also cancels the output stream
       logInfo(log"Zipped ${MDC(LogKeys.NUM_BYTES, totalBytes)} bytes (before compression) to " +
-        log"${MDC(LogKeys.FILE_NAME, filesStr)}")
+        log"${MDC(LogKeys.FILE_NAME, dfsZipFile)}")
+      logDebug(log"Files are:\n\t${MDC(LogKeys.FILE_NAME, fileListStr)}")
       // The other fields saveCheckpointMetrics should have been filled
       saveCheckpointMetrics =
         saveCheckpointMetrics.copy(zipFileBytesUncompressed = Some(totalBytes))
@@ -851,6 +852,7 @@ class RocksDBFileManager(
       case e: Exception =>
         // Cancel the actual output stream first, so that zout.close() does not write the file
         out.cancel()
+        val filesStr = s"$dfsZipFile\n\t$fileListStr"
         logError(log"Error zipping to ${MDC(LogKeys.FILE_NAME, filesStr)}", e)
         throw e
     } finally {
