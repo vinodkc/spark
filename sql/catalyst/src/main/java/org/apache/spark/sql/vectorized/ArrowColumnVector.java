@@ -178,6 +178,12 @@ public class ArrowColumnVector extends ColumnVector {
       accessor = new LargeBinaryAccessor(largeVarBinaryVector);
     } else if (vector instanceof DateDayVector dateDayVector) {
       accessor = new DateAccessor(dateDayVector);
+    } else if (vector instanceof TimeSecVector) {
+      accessor = new TimeSecAccessor((TimeSecVector) vector);
+    } else if (vector instanceof TimeMilliVector) {
+      accessor = new TimeMilliAccessor((TimeMilliVector) vector);
+    } else if (vector instanceof TimeMicroVector) {
+      accessor = new TimeMicroAccessor((TimeMicroVector) vector);
     } else if (vector instanceof TimeStampMicroTZVector timeStampMicroTZVector) {
       accessor = new TimestampAccessor(timeStampMicroTZVector);
     } else if (vector instanceof TimeStampMicroVector timeStampMicroVector) {
@@ -488,6 +494,51 @@ public class ArrowColumnVector extends ColumnVector {
 
     @Override
     final int getInt(int rowId) {
+      return accessor.get(rowId);
+    }
+  }
+
+  static class TimeSecAccessor extends ArrowVectorAccessor {
+
+    private final TimeSecVector accessor;
+
+    TimeSecAccessor(TimeSecVector vector) {
+      super(vector);
+      this.accessor = vector;
+    }
+
+    @Override
+    final long getLong(int rowId) {
+      return accessor.get(rowId);
+    }
+  }
+
+  static class TimeMilliAccessor extends ArrowVectorAccessor {
+
+    private final TimeMilliVector accessor;
+
+    TimeMilliAccessor(TimeMilliVector vector) {
+      super(vector);
+      this.accessor = vector;
+    }
+
+    @Override
+    final long getLong(int rowId) {
+      return accessor.get(rowId);
+    }
+  }
+
+  static class TimeMicroAccessor extends ArrowVectorAccessor {
+
+    private final TimeMicroVector accessor;
+
+    TimeMicroAccessor(TimeMicroVector vector) {
+      super(vector);
+      this.accessor = vector;
+    }
+
+    @Override
+    final long getLong(int rowId) {
       return accessor.get(rowId);
     }
   }

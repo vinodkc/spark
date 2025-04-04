@@ -19,6 +19,7 @@ package org.apache.spark.sql.execution.arrow
 
 import org.apache.arrow.vector.VectorSchemaRoot
 
+import org.apache.spark.SparkException
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.util._
@@ -67,6 +68,7 @@ class ArrowWriterSuite extends SparkFunSuite {
             case DateType => reader.getInt(rowId)
             case TimestampType => reader.getLong(rowId)
             case TimestampNTZType => reader.getLong(rowId)
+            case _: TimeType => reader.getLong(rowId)
             case _: YearMonthIntervalType => reader.getInt(rowId)
             case _: DayTimeIntervalType => reader.getLong(rowId)
             case CalendarIntervalType => reader.getInterval(rowId)
@@ -91,6 +93,51 @@ class ArrowWriterSuite extends SparkFunSuite {
     check(DateType, Seq(0, 1, 2, null, 4))
     check(TimestampType, Seq(0L, 3.6e9.toLong, null, 8.64e10.toLong), "America/Los_Angeles")
     check(TimestampNTZType, Seq(0L, 3.6e9.toLong, null, 8.64e10.toLong))
+    // Apache Arrow supports only seconds, milliseconds, microseconds, and nanoseconds precision
+    // Spark doesn't support nanoseconds precision for TimeType
+    // So it doesn't support TimeType(1), TimeType(2), TimeType(4) and TimeType(5)
+    // Test SECONDS precision (TimeType(0))
+    // Values are in seconds since midnight
+    check(TimeType(0), Seq(
+      0,       // 00:00:00
+      1,       // 00:00:01
+      3600,    // 01:00:00
+      3661,    // 01:01:01
+      86399,   // 23:59:59 (last second of the day)
+      null     // Null value
+    ))
+
+    // Test MILLISECONDS precision (TimeType(3))
+    check(TimeType(3), Seq(
+      0,          // 00:00:00.000
+      1,          // 00:00:00.001
+      1000,       // 00:00:01.000
+      59000,      // 00:00:59.000
+      3600000,    // 01:00:00.000
+      3661000,    // 01:01:01.000
+      86399000,   // 23:59:59.000
+      86399999,   // Just before midnight (23:59:59.999)
+      null
+    ))
+
+    // Test MICROSECONDS precision (TimeType(6))
+    check(TimeType(6), Seq(
+      0L,              // Midnight (00:00:00.000000)
+      1L,              // Microsecond after midnight (00:00:00.000001)
+      1000000L,        // One second after midnight (00:00:01.000000)
+      59000000L,       // Fifty-nine seconds after midnight (00:00:59.000000)
+      123456789L,      // Arbitrary time
+      3661000000L,     // One hour and one second after midnight (01:01:01.000000)
+      863999000000L,   // Last second of the day (23:59:59.000000)
+      863999999999L,   // Last micro of the day (23:59:59.999999)
+      null
+    ))
+    intercept[SparkException] {
+      check(TimeType(1), Seq(1))
+    }
+    intercept[SparkException] {
+      check(TimeType(4), Seq(1234))
+    }
     check(NullType, Seq(null, null, null))
     DataTypeTestUtils.yearMonthIntervalTypes
       .foreach(check(_, Seq(null, 0, 1, -1, Int.MaxValue, Int.MinValue)))

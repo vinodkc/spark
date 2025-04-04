@@ -27,7 +27,7 @@ import org.apache.arrow.vector.types.{DateUnit, FloatingPointPrecision, Interval
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType, Schema}
 
 import org.apache.spark.SparkException
-import org.apache.spark.sql.errors.ExecutionErrors
+import org.apache.spark.sql.errors.{DataTypeErrors, ExecutionErrors}
 import org.apache.spark.sql.types._
 import org.apache.spark.util.ArrayImplicits._
 
@@ -58,6 +58,14 @@ private[sql] object ArrowUtils {
       case TimestampType => new ArrowType.Timestamp(TimeUnit.MICROSECOND, timeZoneId)
       case TimestampNTZType =>
         new ArrowType.Timestamp(TimeUnit.MICROSECOND, null)
+      case TimeType(precision) =>
+        val (unit, bitWidth) = precision match {
+          case 0 => (TimeUnit.SECOND, 32)
+          case 3 => (TimeUnit.MILLISECOND, 32)
+          case 6 => (TimeUnit.MICROSECOND, 64)
+          case _ => throw DataTypeErrors.unsupportedTimePrecisionError(precision)
+        }
+        new ArrowType.Time(unit, bitWidth)
       case NullType => ArrowType.Null.INSTANCE
       case _: YearMonthIntervalType => new ArrowType.Interval(IntervalUnit.YEAR_MONTH)
       case _: DayTimeIntervalType => new ArrowType.Duration(TimeUnit.MICROSECOND)
@@ -84,6 +92,14 @@ private[sql] object ArrowUtils {
     case ArrowType.LargeBinary.INSTANCE => BinaryType
     case d: ArrowType.Decimal => DecimalType(d.getPrecision, d.getScale)
     case date: ArrowType.Date if date.getUnit == DateUnit.DAY => DateType
+    case time: ArrowType.Time =>
+      val precision = time.getUnit match {
+        case TimeUnit.SECOND => TimeType.MIN_PRECISION
+        case TimeUnit.MILLISECOND => TimeType.MIN_PRECISION + 3
+        case TimeUnit.MICROSECOND => TimeType.MICROS_PRECISION
+        case _ => TimeType.MICROS_PRECISION // Truncate ns to micros
+      }
+      TimeType(precision)
     case ts: ArrowType.Timestamp
         if ts.getUnit == TimeUnit.MICROSECOND && ts.getTimezone == null =>
       TimestampNTZType

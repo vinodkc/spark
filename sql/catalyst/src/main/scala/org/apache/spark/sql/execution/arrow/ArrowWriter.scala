@@ -66,6 +66,9 @@ object ArrowWriter {
       case (BinaryType, vector: VarBinaryVector) => new BinaryWriter(vector)
       case (BinaryType, vector: LargeVarBinaryVector) => new LargeBinaryWriter(vector)
       case (DateType, vector: DateDayVector) => new DateWriter(vector)
+      case (TimeType(_), vector: TimeMicroVector) => new TimeMicroWriter(vector)
+      case (TimeType(_), vector: TimeMilliVector) => new TimeMilliWriter(vector)
+      case (TimeType(_), vector: TimeSecVector) => new TimeSecWriter(vector)
       case (TimestampType, vector: TimeStampMicroTZVector) => new TimestampWriter(vector)
       case (TimestampNTZType, vector: TimeStampMicroVector) => new TimestampNTZWriter(vector)
       case (ArrayType(_, _), vector: ListVector) =>
@@ -332,6 +335,39 @@ private[arrow] class DateWriter(val valueVector: DateDayVector) extends ArrowFie
 
   override def setValue(input: SpecializedGetters, ordinal: Int): Unit = {
     valueVector.setSafe(count, input.getInt(ordinal))
+  }
+}
+
+private[arrow] class TimeSecWriter(val valueVector: TimeSecVector) extends ArrowFieldWriter {
+
+  override def setNull(): Unit = {
+    valueVector.setNull(count)
+  }
+
+  override def setValue(input: SpecializedGetters, ordinal: Int): Unit = {
+    valueVector.setSafe(count, input.getInt(ordinal))
+  }
+}
+
+private[arrow] class TimeMilliWriter(val valueVector: TimeMilliVector) extends ArrowFieldWriter {
+
+  override def setNull(): Unit = {
+    valueVector.setNull(count)
+  }
+
+  override def setValue(input: SpecializedGetters, ordinal: Int): Unit = {
+    valueVector.setSafe(count, input.getInt(ordinal))
+  }
+}
+
+private[arrow] class TimeMicroWriter(val valueVector: TimeMicroVector) extends ArrowFieldWriter {
+
+  override def setNull(): Unit = {
+    valueVector.setNull(count)
+  }
+
+  override def setValue(input: SpecializedGetters, ordinal: Int): Unit = {
+    valueVector.setSafe(count, input.getLong(ordinal))
   }
 }
 
