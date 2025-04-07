@@ -143,6 +143,26 @@ object DateTimeUtils extends SparkDateTimeUtils {
   }
 
   /**
+   * Returns the second value of a given TIME (TimeType) value.
+   * @param micros
+   *   The number of microseconds since the epoch.
+   * @param precision
+   *   The time fractional seconds precision, which indicates the number of decimal digits
+   *   maintained.
+   */
+  def getSecondsOfTimeWithFraction(micros: Long, precision: Int): Decimal = {
+    val BASE = 10
+    val MAX_PRECISION = 9
+    val nanos = micros * NANOS_PER_MICROS
+    val seconds = (nanos / NANOS_PER_SECOND) % SECONDS_PER_MINUTE
+    val fraction =
+      (nanos % NANOS_PER_SECOND) / math.pow(BASE, MAX_PRECISION - precision).toLong / math.pow(
+        BASE,
+        precision)
+    Decimal(seconds + fraction, 2 + precision, precision)
+  }
+
+  /**
    * Returns local seconds, including fractional parts, multiplied by 1000000.
    *
    * @param micros The number of microseconds since the epoch.
