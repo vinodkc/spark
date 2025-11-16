@@ -20,6 +20,7 @@ package org.apache.spark.sql.execution.datasources.jdbc
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.parser.ParseException
+import org.apache.spark.sql.jdbc.JdbcType
 import org.apache.spark.sql.types._
 
 class JdbcUtilsSuite extends SparkFunSuite {
@@ -68,5 +69,13 @@ class JdbcUtilsSuite extends SparkFunSuite {
       },
       condition = "PARSE_SYNTAX_ERROR",
       parameters = Map("error" -> "'.'", "hint" -> ""))
+  }
+
+  test("SPARK-XXXXX_PR1: getCommonJDBCType for TimeType") {
+    // TimeType with all valid precisions (0-6) should map to TIME
+    val expected = Some(JdbcType("TIME", java.sql.Types.TIME))
+    (0 to 6).foreach { precision =>
+      assert(JdbcUtils.getCommonJDBCType(TimeType(precision)) === expected)
+    }
   }
 }

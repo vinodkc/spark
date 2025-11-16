@@ -242,6 +242,7 @@ abstract class TypeCoercionHelper {
 
   protected def findWiderDateTimeType(d1: DatetimeType, d2: DatetimeType): Option[DatetimeType] =
     (d1, d2) match {
+      case (t1: TimeType, t2: TimeType) => Some(TimeType(math.max(t1.precision, t2.precision)))
       case (_, _: TimeType) => None
       case (_: TimeType, _) => None
       case (_: TimestampType, _: DateType) | (_: DateType, _: TimestampType) =>

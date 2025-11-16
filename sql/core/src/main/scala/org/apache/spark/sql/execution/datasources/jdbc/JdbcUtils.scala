@@ -164,6 +164,7 @@ object JdbcUtils extends Logging with SQLConfHelper {
       // Note that some dialects override this setting, e.g. as SQL Server.
       case TimestampNTZType => Option(JdbcType("TIMESTAMP", java.sql.Types.TIMESTAMP))
       case DateType => Option(JdbcType("DATE", java.sql.Types.DATE))
+      case _: TimeType => Option(JdbcType("TIME", java.sql.Types.TIME))
       case t: DecimalType => Option(
         JdbcType(s"DECIMAL(${t.precision},${t.scale})", java.sql.Types.DECIMAL))
       case _ => None
@@ -227,7 +228,21 @@ object JdbcUtils extends Logging with SQLConfHelper {
     case java.sql.Types.SMALLINT => IntegerType
     case java.sql.Types.SQLXML => StringType
     case java.sql.Types.STRUCT => StringType
-    case java.sql.Types.TIME => getTimestampType(isTimestampNTZ)
+    case java.sql.Types.TIME =>
+      val timePrecision = if (scale >= 0 && scale <= 6) {
+        scale
+      } else {
+        // Some DBs: encode precision in typeName like "TIME(3)"
+        // Try to parse precision from typeName (e.g., "TIME(3)")
+        val precisionPattern = """TIME\((\d+)\)""".r
+        typeName.toUpperCase(java.util.Locale.ROOT) match {
+          case precisionPattern(p) =>
+            val parsed = p.toInt
+            if (parsed >= 0 && parsed <= 6) parsed else 6
+          case _ => 6  // Default to max precision
+        }
+      }
+      TimeType(timePrecision)
     case java.sql.Types.TIMESTAMP => getTimestampType(isTimestampNTZ)
     case java.sql.Types.TINYINT => IntegerType
     case java.sql.Types.VARBINARY => BinaryType
@@ -543,6 +558,15 @@ object JdbcUtils extends Logging with SQLConfHelper {
           row.setLong(pos, localDateTimeToMicros(dialect.convertJavaTimestampToTimestampNTZ(t)))
         } else {
           row.update(pos, null)
+        }
+
+    case timeType: TimeType =>
+      (rs: ResultSet, row: InternalRow, pos: Int) =>
+        val lt = rs.getObject(pos + 1, classOf[java.time.LocalTime])
+        if (lt != null) {
+          row.setLong(pos, lt.toNanoOfDay)
+        } else {
+          row.setNullAt(pos)
         }
 
     case BinaryType if metadata.contains("binarylong") =>

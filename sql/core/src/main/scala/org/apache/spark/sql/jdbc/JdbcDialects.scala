@@ -373,6 +373,7 @@ abstract class JdbcDialect extends Serializable with Logging {
       s"'${timestampFormatter.format(timestampValue)}'"
     case dateValue: Date => "'" + dateValue + "'"
     case dateValue: LocalDate => s"'${DateFormatter().format(dateValue)}'"
+    case timeValue: java.time.LocalTime => s"TIME '${timeValue.toString}'"
     case arrayValue: Array[Any] => arrayValue.map(compileValue).mkString(", ")
     case binaryValue: Array[Byte] => binaryValue.map("%02X".format(_)).mkString("X'", "", "'")
     case _ => value
