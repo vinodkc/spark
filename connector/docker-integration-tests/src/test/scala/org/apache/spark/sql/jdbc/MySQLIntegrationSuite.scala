@@ -187,7 +187,7 @@ class MySQLIntegrationSuite extends SharedJDBCIntegrationSuite {
       val df = sqlContext.read.jdbc(jdbcUrl, "dates", new Properties)
       checkAnswer(df, Row(
         Date.valueOf("1991-11-09"),
-        LocalTime.of(13, 31, 24, 123000000),
+        LocalTime.of(13, 31, 24),
         Timestamp.valueOf("1996-01-01 01:23:45"),
         Timestamp.valueOf("2009-02-13 23:31:30"),
         Date.valueOf("2001-01-01"),
@@ -207,11 +207,11 @@ class MySQLIntegrationSuite extends SharedJDBCIntegrationSuite {
         .jdbc(jdbcUrl, "dates", new Properties)
       checkAnswer(df, Row(
         Date.valueOf("1991-11-09"),
-        LocalDateTime.of(1970, 1, 1, 13, 31, 24),
+        LocalTime.of(13, 31, 24),
         LocalDateTime.of(1996, 1, 1, 1, 23, 45),
         Timestamp.valueOf("2009-02-13 23:31:30"),
         Date.valueOf("2001-01-01"),
-        LocalDateTime.of(1970, 1, 1, 13, 31, 24, 123000000)))
+        LocalTime.of(13, 31, 24, 123000000)))
     }
   }
 
