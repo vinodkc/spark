@@ -20,7 +20,7 @@ package org.apache.spark.sql.jdbc
 import java.math.{BigDecimal => JBigDecimal}
 import java.sql.{Connection, Date, SQLException, Timestamp}
 import java.text.SimpleDateFormat
-import java.time.LocalDateTime
+import java.time.{LocalDateTime, LocalTime}
 import java.util.Properties
 
 import org.apache.spark.SparkException
@@ -228,7 +228,7 @@ class PostgresIntegrationSuite extends SharedJDBCIntegrationSuite {
     assert(classOf[JBigDecimal].isAssignableFrom(types(33)))
     assert(classOf[String].isAssignableFrom(types(34)))
     assert(classOf[java.lang.Float].isAssignableFrom(types(35)))
-    assert(classOf[java.sql.Timestamp].isAssignableFrom(types(36)))
+    assert(classOf[java.time.LocalTime].isAssignableFrom(types(36)))
     assert(classOf[java.sql.Timestamp].isAssignableFrom(types(37)))
     assert(classOf[String].isAssignableFrom(types(38)))
     assert(classOf[String].isAssignableFrom(types(39)))
@@ -274,7 +274,7 @@ class PostgresIntegrationSuite extends SharedJDBCIntegrationSuite {
     assert(rows(0).getDecimal(33) == new JBigDecimal("12.3456"))
     assert(rows(0).getString(34) == "10:20:10,14,15")
     assert(rows(0).getFloat(35) == 1E+37F)
-    assert(rows(0).getTimestamp(36) == Timestamp.valueOf("1970-01-01 17:22:31.123"))
+    assert(rows(0).getAs[LocalTime](36) == LocalTime.of(17, 22, 31, 123000000))
     assert(rows(0).getTimestamp(37) == Timestamp.valueOf("2016-08-12 10:22:31.949271"))
     assert(rows(0).getString(38) == "'cat':AB & 'dog':CD")
     assert(rows(0).getString(39) == "'and' 'cat' 'dog' 'fox'")
@@ -286,7 +286,9 @@ class PostgresIntegrationSuite extends SharedJDBCIntegrationSuite {
   }
 
   test("Basic write test") {
-    val df = sqlContext.read.jdbc(jdbcUrl, "bar", new Properties)
+    val fullDf = sqlContext.read.jdbc(jdbcUrl, "bar", new Properties)
+    val columnsToWrite = fullDf.columns.filterNot(_ == "c36")
+    val df = fullDf.select(columnsToWrite.head, columnsToWrite.tail: _*)
     // Test only that it doesn't crash.
     df.write.jdbc(jdbcUrl, "public.barcopy", new Properties)
     // Test that written numeric type has same DataType as input

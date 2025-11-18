@@ -19,7 +19,7 @@ package org.apache.spark.sql.jdbc
 
 import java.math.BigDecimal
 import java.sql.{Connection, Date, Timestamp}
-import java.time.LocalDateTime
+import java.time.{LocalDateTime, LocalTime}
 import java.util.Properties
 
 import scala.util.Using
@@ -187,11 +187,11 @@ class MySQLIntegrationSuite extends SharedJDBCIntegrationSuite {
       val df = sqlContext.read.jdbc(jdbcUrl, "dates", new Properties)
       checkAnswer(df, Row(
         Date.valueOf("1991-11-09"),
-        Timestamp.valueOf("1970-01-01 13:31:24"),
+        LocalTime.of(13, 31, 24, 123000000),
         Timestamp.valueOf("1996-01-01 01:23:45"),
         Timestamp.valueOf("2009-02-13 23:31:30"),
         Date.valueOf("2001-01-01"),
-        Timestamp.valueOf("1970-01-01 13:31:24.123")))
+        LocalTime.of(13, 31, 24, 123000000)))
     }
     val df = spark.read.format("jdbc")
       .option("url", jdbcUrl)
@@ -245,7 +245,9 @@ class MySQLIntegrationSuite extends SharedJDBCIntegrationSuite {
 
   test("Basic write test") {
     val df1 = sqlContext.read.jdbc(jdbcUrl, "numbers", new Properties)
+    // Exclude TIME columns (t, t1) as JDBC write doesn't support TIME type yet
     val df2 = sqlContext.read.jdbc(jdbcUrl, "dates", new Properties)
+      .select("d", "dt", "ts", "yr")
     val df3 = sqlContext.read.jdbc(jdbcUrl, "strings", new Properties)
     df1.write.jdbc(jdbcUrl, "numberscopy", new Properties)
     df2.write.jdbc(jdbcUrl, "datescopy", new Properties)

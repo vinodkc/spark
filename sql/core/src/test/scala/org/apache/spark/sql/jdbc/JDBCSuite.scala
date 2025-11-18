@@ -24,7 +24,7 @@ import java.time.format.DateTimeFormatter
 import java.util.{Calendar, GregorianCalendar, Properties, TimeZone}
 
 import scala.jdk.CollectionConverters._
-import scala.util.Random
+import scala.util.{Random, Using}
 
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
@@ -82,12 +82,16 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
   private def createTimeTable(tableName: String, columns: String*): Unit = {
     val cols = if (columns.isEmpty) "start_time TIME(6), end_time TIME(6)"
                else columns.mkString(", ")
-    conn.prepareStatement(s"CREATE TABLE $tableName (id INT, $cols)").executeUpdate()
+    Using.resource(conn.prepareStatement(s"CREATE TABLE $tableName (id INT, $cols)")) { stmt =>
+      stmt.executeUpdate()
+    }
   }
 
   private def insertTimeData(tableName: String, values: String*): Unit = {
     val rows = values.mkString(", ")
-    conn.prepareStatement(s"INSERT INTO $tableName VALUES $rows").executeUpdate()
+    Using.resource(conn.prepareStatement(s"INSERT INTO $tableName VALUES $rows")) { stmt =>
+      stmt.executeUpdate()
+    }
   }
 
   private def timeToNanos(hours: Int, minutes: Int, seconds: Int, nanos: Long = 0): Long = {
@@ -769,10 +773,10 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
       urlWithUserAndPass, "TEST.TIMETYPES", new Properties()).collect()
     val cachedRows = spark.read.jdbc(urlWithUserAndPass, "TEST.TIMETYPES", new Properties())
       .cache().collect()
-    val expectedTimeAtEpoch = java.sql.Timestamp.valueOf("1970-01-01 12:34:56.0")
-    assert(rows(0).getAs[java.sql.Timestamp](0) === expectedTimeAtEpoch)
-    assert(rows(1).getAs[java.sql.Timestamp](0) === expectedTimeAtEpoch)
-    assert(cachedRows(0).getAs[java.sql.Timestamp](0) === expectedTimeAtEpoch)
+    val expectedTime = java.time.LocalTime.of(12, 34, 56)
+    assert(rows(0).getAs[java.time.LocalTime](0) === expectedTime)
+    assert(rows(1).getAs[java.time.LocalTime](0) === expectedTime)
+    assert(cachedRows(0).getAs[java.time.LocalTime](0) === expectedTime)
   }
 
   test("SPARK-47396: TIME WITHOUT TIME ZONE preferTimestampNTZ") {
@@ -782,7 +786,10 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
       .option("url", urlWithUserAndPass)
       .option("query", "SELECT A FROM TEST.TIMETYPES limit 1")
       .load()
-    assert(df.head().get(0).isInstanceOf[LocalDateTime])
+    // TIME type should always be LocalTime, not affected by preferTimestampNTZ
+    // preferTimestampNTZ is for TIMESTAMP types only
+    assert(df.head().get(0).isInstanceOf[java.time.LocalTime])
+    assert(df.head().getAs[java.time.LocalTime](0) === java.time.LocalTime.of(12, 34, 56))
   }
 
   test("test DATE types") {
@@ -2548,7 +2555,7 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
     assert(df.schema("END_TIME").dataType === TimeType(3))
     assert(df.schema("BREAK_TIME").dataType === TimeType(6))
 
-    // Test filters with type coercion across precisions
+    // Test filters
     assert(df.filter("START_TIME >= '06:00:00.000000'").count() === 3)
     assert(df.filter("END_TIME > '12:00:00.000'").count() === 3)
     assert(df.filter("START_TIME < BREAK_TIME").count() === 4)

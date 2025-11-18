@@ -20,6 +20,7 @@ package org.apache.spark.sql.jdbc
 import java.sql.{Connection, DriverManager}
 import java.util.{HexFormat, Properties}
 
+import scala.util.Using
 import scala.util.control.NonFatal
 
 import test.org.apache.spark.sql.connector.catalog.functions.JavaStrLen.JavaStrLenStaticMagic
@@ -149,6 +150,13 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
       f(conn)
     } finally {
       conn.close()
+    }
+  }
+
+  // Helper to execute SQL statements with automatic resource management
+  private def executeStatement(conn: Connection, sql: String): Unit = {
+    Using.resource(conn.prepareStatement(sql)) { stmt =>
+      stmt.executeUpdate()
     }
   }
 
@@ -3194,24 +3202,22 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
 
   test("SPARK-XXXXX_PR1: V2 read TIME type with different precisions") {
     withConnection { conn =>
-      conn.prepareStatement(
+      executeStatement(conn,
         """CREATE TABLE "test"."time_precision" (
           |  id INT,
           |  time_seconds TIME(0),
           |  time_millis TIME(3),
           |  time_micros TIME(6)
-          |)""".stripMargin
-      ).executeUpdate()
+          |)""".stripMargin)
 
-      conn.prepareStatement(
+      executeStatement(conn,
         """INSERT INTO "test"."time_precision" VALUES
           |(1, TIME '14:30:45', TIME '14:30:45.123', TIME '14:30:45.123456'),
           |(2, TIME '09:15:30', TIME '09:15:30.999', TIME '09:15:30.999999'),
           |(3, TIME '00:00:00', TIME '00:00:00.001', TIME '00:00:00.000001'),
           |(4, TIME '23:59:59', TIME '23:59:59.999', TIME '23:59:59.999999'),
           |(5, NULL, NULL, NULL)
-          |""".stripMargin
-      ).executeUpdate()
+          |""".stripMargin)
     }
 
     val df = sql("SELECT * FROM h2.test.time_precision ORDER BY id")
@@ -3246,18 +3252,15 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
 
   test("SPARK-XXXXX_PR1: V2 filter pushdown on TIME columns") {
     withConnection { conn =>
-      conn.prepareStatement(
+      executeStatement(conn,
         """CREATE TABLE "test"."time_shifts" (
           |  id INT,
           |  shift_start TIME(6),
           |  shift_end TIME(6)
-          |)""".stripMargin
-      ).executeUpdate()
+          |)""".stripMargin)
 
       val insertValues = TimeTestData.shiftTestData.mkString(", ")
-      conn.prepareStatement(
-        s"""INSERT INTO "test"."time_shifts" VALUES $insertValues"""
-      ).executeUpdate()
+      executeStatement(conn, s"""INSERT INTO "test"."time_shifts" VALUES $insertValues""")
     }
 
     TimeTestData.filterTestCases.foreach { case (condition, expectedIds) =>
@@ -3277,18 +3280,15 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
 
   test("SPARK-XXXXX_PR1: V2 ORDER BY and GROUP BY on TIME columns") {
     withConnection { conn =>
-      conn.prepareStatement(
+      executeStatement(conn,
         """CREATE TABLE "test"."time_order_group" (
           |  id INT,
           |  start_time TIME(6),
           |  end_time TIME(6)
-          |)""".stripMargin
-      ).executeUpdate()
+          |)""".stripMargin)
 
       val insertValues = TimeTestData.orderGroupTestData.mkString(", ")
-      conn.prepareStatement(
-        s"""INSERT INTO "test"."time_order_group" VALUES $insertValues"""
-      ).executeUpdate()
+      executeStatement(conn, s"""INSERT INTO "test"."time_order_group" VALUES $insertValues""")
     }
 
     // Test 1: ORDER BY start_time ASC
@@ -3358,24 +3358,22 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
 
   test("SPARK-XXXXX_PR1: V2 filter/ORDER BY/GROUP BY with mixed TIME precisions") {
     withConnection { conn =>
-      conn.prepareStatement(
+      executeStatement(conn,
         """CREATE TABLE "test"."time_mixed_ops" (
           |  id INT,
           |  start_time TIME(0),
           |  end_time TIME(3),
           |  break_time TIME(6)
-          |)""".stripMargin
-      ).executeUpdate()
+          |)""".stripMargin)
 
-      conn.prepareStatement(
+      executeStatement(conn,
         """INSERT INTO "test"."time_mixed_ops" VALUES
           |(1, TIME '06:00:00', TIME '14:00:00.500', TIME '10:30:15.123456'),
           |(2, TIME '14:00:00', TIME '22:00:00.999', TIME '18:15:30.999999'),
           |(3, TIME '22:00:00', TIME '06:00:00.001', TIME '02:45:45.000001'),
           |(4, TIME '04:00:00', TIME '12:00:00.000', TIME '08:00:00.000000'),
           |(5, TIME '04:00:00', TIME '12:00:00.001', TIME '08:00:00.000001')
-          |""".stripMargin
-      ).executeUpdate()
+          |""".stripMargin)
     }
 
     // Verify schema has correct precisions

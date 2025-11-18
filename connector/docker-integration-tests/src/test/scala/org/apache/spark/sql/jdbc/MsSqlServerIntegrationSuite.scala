@@ -19,7 +19,7 @@ package org.apache.spark.sql.jdbc
 
 import java.math.BigDecimal
 import java.sql.{Connection, Date, Timestamp}
-import java.time.LocalDateTime
+import java.time.{LocalDateTime, LocalTime}
 import java.util.Properties
 
 import org.apache.spark.SparkSQLException
@@ -252,11 +252,8 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
               } else {
                 Timestamp.valueOf("1996-01-01 23:24:00")
               },
-              if (ntz) {
-                LocalDateTime.of(1970, 1, 1, 13, 31, 24)
-              } else {
-                Timestamp.valueOf("1970-01-01 13:31:24")
-              }))
+              // TIME column always returns LocalTime, not affected by preferTimestampNTZ
+              LocalTime.of(13, 31, 24)))
           }
         }
       }
@@ -294,7 +291,9 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
 
   test("Basic write test") {
     val df1 = spark.read.jdbc(jdbcUrl, "numbers", new Properties)
+    // Exclude TIME column (f) as JDBC write doesn't support TIME type yet
     val df2 = spark.read.jdbc(jdbcUrl, "dates", new Properties)
+      .select("a", "b", "c", "d", "e")
     val df3 = spark.read.jdbc(jdbcUrl, "strings", new Properties)
     df1.write.jdbc(jdbcUrl, "numberscopy", new Properties)
     df2.write.jdbc(jdbcUrl, "datescopy", new Properties)
