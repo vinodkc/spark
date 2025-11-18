@@ -288,7 +288,7 @@ class PostgresIntegrationSuite extends SharedJDBCIntegrationSuite {
   test("Basic write test") {
     val fullDf = sqlContext.read.jdbc(jdbcUrl, "bar", new Properties)
     val columnsToWrite = fullDf.columns.filterNot(_ == "c36")
-    val df = fullDf.select(columnsToWrite.head, columnsToWrite.tail: _*)
+    val df = fullDf.select(columnsToWrite.toSeq.head, columnsToWrite.toSeq.tail: _*)
     // Test only that it doesn't crash.
     df.write.jdbc(jdbcUrl, "public.barcopy", new Properties)
     // Test that written numeric type has same DataType as input
