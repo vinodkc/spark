@@ -899,6 +899,83 @@ abstract class OrcQuerySuite extends OrcQueryTest with SharedSparkSession {
       }
     }
   }
+
+  test("SPARK-XXXXX: TIME type support for ORC format") {
+    // Test that TIME type is properly supported in ORC format with round-trip
+    withTempPath { dir =>
+      val path = dir.getCanonicalPath
+
+      // Create a DataFrame with TIME type using SQL
+      val df = sql("""
+        SELECT
+          id,
+          make_time(hour, minute, second) AS time_col,
+          make_time(hour, minute, CAST(second_dec AS DECIMAL(8,6))) AS time_with_micros
+        FROM (VALUES
+          (1, 9, 30, 0, 0.0),
+          (2, 14, 45, 30, 30.123456),
+          (3, 23, 59, 59, 59.999999),
+          (4, 0, 0, 0, 0.0),
+          (5, 12, 0, 0, 0.500000)
+        ) AS t(id, hour, minute, second, second_dec)
+      """)
+
+      // Write to ORC format
+      df.write.mode("overwrite").orc(path)
+
+      // Read back from ORC
+      val result = spark.read.orc(path)
+
+      // Verify schema is preserved
+      assert(result.schema("time_col").dataType.isInstanceOf[TimeType])
+      assert(result.schema("time_with_micros").dataType.isInstanceOf[TimeType])
+
+      // Verify data integrity with round-trip
+      checkAnswer(result, df)
+    }
+  }
+
+  test("SPARK-XXXXX: TIME type with NULL values in ORC") {
+    // Test NULL handling for TIME type in ORC
+    withTempPath { dir =>
+      val path = dir.getCanonicalPath
+
+      val df = sql("""
+        SELECT
+          id,
+          CASE WHEN id % 2 = 0 THEN make_time(id, 0, 0) ELSE NULL END AS time_col
+        FROM (VALUES (1), (2), (3), (4), (5)) AS t(id)
+      """)
+
+      df.write.mode("overwrite").orc(path)
+      val result = spark.read.orc(path)
+
+      checkAnswer(result, df)
+    }
+  }
+
+  test("SPARK-XXXXX: TIME type with different precisions in ORC") {
+    // Test TIME type with various precisions (0-6)
+    withTempPath { dir =>
+      val path = dir.getCanonicalPath
+
+      val df = sql("""
+        SELECT
+          make_time(12, 34, 56) AS time_0,
+          make_time(12, 34, CAST(56.1 AS DECIMAL(8,6))) AS time_1,
+          make_time(12, 34, CAST(56.12 AS DECIMAL(8,6))) AS time_2,
+          make_time(12, 34, CAST(56.123 AS DECIMAL(8,6))) AS time_3,
+          make_time(12, 34, CAST(56.1234 AS DECIMAL(8,6))) AS time_4,
+          make_time(12, 34, CAST(56.12345 AS DECIMAL(8,6))) AS time_5,
+          make_time(12, 34, CAST(56.123456 AS DECIMAL(8,6))) AS time_6
+      """)
+
+      df.write.mode("overwrite").orc(path)
+      val result = spark.read.orc(path)
+
+      checkAnswer(result, df)
+    }
+  }
 }
 
 class OrcV1QuerySuite extends OrcQuerySuite {
