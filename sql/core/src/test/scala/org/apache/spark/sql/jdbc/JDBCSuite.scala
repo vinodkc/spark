@@ -2318,7 +2318,7 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
       StructField("id", IntegerType, nullable = false) +:
         (0 to 6).map(p => StructField(s"time$p", TimeType(p))))
 
-    val writeDf = spark.createDataFrame(spark.sparkContext.parallelize(writeRows), writeSchema)
+    val writeDf = spark.createDataFrame(writeRows.asJava, writeSchema)
     writeDf.write.mode("overwrite").jdbc(urlWithUserAndPass, tableName, new Properties())
 
     // Read: Verify round-trip and schema inference for ALL precisions
@@ -2347,7 +2347,7 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
 
     // Write: Add NULL row for all precisions
     val nullRow = Seq(Row(5 +: Seq.fill(7)(null): _*))
-    val nullDf = spark.createDataFrame(spark.sparkContext.parallelize(nullRow), writeSchema)
+    val nullDf = spark.createDataFrame(nullRow.asJava, writeSchema)
     nullDf.write.mode("append").jdbc(urlWithUserAndPass, tableName, new Properties())
 
     // Read: Verify NULL handling
@@ -2379,7 +2379,7 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
       StructField("end_time", TimeType(6), nullable = true)
     ))
 
-    val writeDf = spark.createDataFrame(spark.sparkContext.parallelize(writeRows), schema)
+    val writeDf = spark.createDataFrame(writeRows.asJava, schema)
     writeDf.write.mode("overwrite").jdbc(urlWithUserAndPass, tableName, new Properties())
 
     // Read: Test filters
@@ -2439,14 +2439,14 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
       Row(1, LocalTime.of(10, 0, 0)),
       Row(2, LocalTime.of(11, 0, 0))
     )
-    val df1 = spark.createDataFrame(spark.sparkContext.parallelize(rows1), schema)
+    val df1 = spark.createDataFrame(rows1.asJava, schema)
 
     df1.write.mode("overwrite").jdbc(urlWithUserAndPass, tableName, new Properties())
     assert(spark.read.jdbc(urlWithUserAndPass, tableName, new Properties()).count() === 2)
 
     // Test 2: Append mode
     val rows2 = Seq(Row(3, LocalTime.of(12, 0, 0)))
-    val df2 = spark.createDataFrame(spark.sparkContext.parallelize(rows2), schema)
+    val df2 = spark.createDataFrame(rows2.asJava, schema)
 
     df2.write.mode("append").jdbc(urlWithUserAndPass, tableName, new Properties())
 
@@ -2462,7 +2462,7 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
       Row(4, LocalTime.of(13, 0, 0)),
       Row(5, LocalTime.of(14, 0, 0))
     )
-    val df3 = spark.createDataFrame(spark.sparkContext.parallelize(rows3), schema)
+    val df3 = spark.createDataFrame(rows3.asJava, schema)
 
     df3.write.mode("overwrite").jdbc(urlWithUserAndPass, tableName, new Properties())
     assert(spark.read.jdbc(urlWithUserAndPass, tableName, new Properties()).count() === 2)
@@ -2475,7 +2475,7 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
       Row(i, LocalTime.of(hour, minute, second))
     }
 
-    val batchDf = spark.createDataFrame(spark.sparkContext.parallelize(largeRows), schema)
+    val batchDf = spark.createDataFrame(largeRows.asJava, schema)
       .filter("id > 10")
 
     val props = new Properties()

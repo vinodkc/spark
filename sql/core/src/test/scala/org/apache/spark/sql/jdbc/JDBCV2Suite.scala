@@ -21,7 +21,7 @@ import java.sql.{Connection, DriverManager}
 import java.time.LocalTime
 import java.util.{HexFormat, Properties}
 
-import scala.util.Using
+import scala.jdk.CollectionConverters._
 import scala.util.control.NonFatal
 
 import test.org.apache.spark.sql.connector.catalog.functions.JavaStrLen.JavaStrLenStaticMagic
@@ -154,14 +154,6 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
     }
   }
 
-  // Helper to execute SQL statements with automatic resource management
-  private def executeStatement(conn: Connection, sql: String): Unit = {
-    Using.resource(conn.prepareStatement(sql)) { stmt =>
-      stmt.executeUpdate()
-    }
-  }
-
-  // Helper methods for TIME type tests
   private def timeToNanos(hours: Int, minutes: Int, seconds: Int, nanos: Long = 0): Long = {
     LocalTime.of(hours, minutes, seconds, nanos.toInt).toNanoOfDay()
   }
@@ -173,43 +165,6 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
     val time = row.getAs[LocalTime](colName)
     assert(time.toNanoOfDay() === expectedNanos,
       s"Expected $expectedNanos but got ${time.toNanoOfDay()}")
-  }
-
-  // Common test data fixtures for TIME type tests
-  object TimeTestData {
-    // Shift test data: 5 rows with morning, afternoon, night shifts, NULL, and precise time
-    val shiftTestData = Seq(
-      "(1, TIME '06:00:00', TIME '14:00:00')",
-      "(2, TIME '14:00:00', TIME '22:00:00')",
-      "(3, TIME '22:00:00', TIME '06:00:00')",
-      "(4, NULL, NULL)",
-      "(5, TIME '09:30:45.123', TIME '17:30:45.456')"
-    )
-
-    // Order/Group test data: 9 rows with various times including duplicates and NULL
-    val orderGroupTestData = Seq(
-      "(1, TIME '06:00:00', TIME '14:00:00')",
-      "(2, TIME '14:00:00', TIME '22:00:00')",
-      "(3, TIME '22:00:00', TIME '06:00:00')",
-      "(4, TIME '04:00:00', TIME '12:00:00')",
-      "(5, TIME '23:30:00', TIME '07:30:00')",
-      "(6, TIME '10:00:00', TIME '18:00:00')",
-      "(7, TIME '18:00:00', TIME '02:00:00')",
-      "(8, NULL, NULL)",
-      "(9, TIME '04:00:00', TIME '12:00:00')"
-    )
-
-    // Filter test conditions with expected results (V2 uses lowercase column names in SQL)
-    val filterTestCases = Seq(
-      ("shift_start > '12:00:00'", Seq(2, 3)),
-      ("shift_start <= '14:00:00'", Seq(1, 2, 5)),
-      ("shift_start BETWEEN '08:00:00' AND '18:00:00'", Seq(2, 5)),
-      ("shift_start IS NULL", Seq(4)),
-      ("shift_start IS NOT NULL", Seq(1, 2, 3, 5)),
-      ("shift_start = '09:30:45.123'", Seq(5)),
-      ("shift_start > '06:00:00' AND shift_end < '22:00:00'", Seq(3, 5)),
-      ("shift_start <= '06:00:00' OR shift_start >= '22:00:00'", Seq(1, 3))
-    )
   }
 
   override def beforeAll(): Unit = {
@@ -3194,7 +3149,6 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
   test("SPARK-XXXXX: V2 write/read TIME with precision, NULL, and boundary values") {
     val tableName = "test.time_v2_comprehensive"
 
-    // Helper to create time values with varying nanoseconds for precision testing
     def timeRow(id: Int, h: Int, m: Int, s: Int, nanos: Seq[Long]): Row = {
       Row(id +: nanos.map(n => LocalTime.of(h, m, s, n.toInt)): _*)
     }
@@ -3214,7 +3168,7 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
       StructField("id", IntegerType, nullable = false) +:
         (0 to 6).map(p => StructField(s"time$p", TimeType(p), nullable = true)))
 
-    val writeDf = spark.createDataFrame(spark.sparkContext.parallelize(writeRows), writeSchema)
+    val writeDf = spark.createDataFrame(writeRows.asJava, writeSchema)
     writeDf.writeTo(s"h2.$tableName").create()
 
     // Read: Verify precision preservation for ALL precisions
@@ -3240,7 +3194,7 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
 
     // Write: Add NULL row for all precisions
     val nullRow = Seq(Row(5 +: Seq.fill(7)(null): _*))
-    val nullDf = spark.createDataFrame(spark.sparkContext.parallelize(nullRow), writeSchema)
+    val nullDf = spark.createDataFrame(nullRow.asJava, writeSchema)
     nullDf.write.mode("append").saveAsTable(s"h2.$tableName")
 
     // Read: Verify NULL handling for all precisions
@@ -3271,7 +3225,7 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
       StructField("end_time", TimeType(6), nullable = true)
     ))
 
-    val writeDf = spark.createDataFrame(spark.sparkContext.parallelize(writeRows), schema)
+    val writeDf = spark.createDataFrame(writeRows.asJava, schema)
     writeDf.writeTo(s"h2.$tableName").create()
 
     // Test filter pushdown
@@ -3337,14 +3291,14 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
       Row(1, LocalTime.of(10, 0, 0)),
       Row(2, LocalTime.of(11, 0, 0))
     )
-    val df1 = spark.createDataFrame(spark.sparkContext.parallelize(rows1), schema)
+    val df1 = spark.createDataFrame(rows1.asJava, schema)
 
     df1.writeTo(s"h2.$tableName").create()
     assert(sql(s"SELECT * FROM h2.$tableName").count() === 2)
 
     // Test 2: Append mode
     val rows2 = Seq(Row(3, LocalTime.of(12, 0, 0)))
-    val df2 = spark.createDataFrame(spark.sparkContext.parallelize(rows2), schema)
+    val df2 = spark.createDataFrame(rows2.asJava, schema)
 
     df2.write.mode("append").saveAsTable(s"h2.$tableName")
 
@@ -3360,7 +3314,7 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
       Row(4, LocalTime.of(13, 0, 0)),
       Row(5, LocalTime.of(14, 0, 0))
     )
-    val df3 = spark.createDataFrame(spark.sparkContext.parallelize(rows3), schema)
+    val df3 = spark.createDataFrame(rows3.asJava, schema)
 
     df3.writeTo(s"h2.$tableName").overwrite(lit(true))
 
@@ -3379,7 +3333,7 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
       Row(i, LocalTime.of(hour, minute, second))
     }
 
-    val filteredDf = spark.createDataFrame(spark.sparkContext.parallelize(sourceRows), schema)
+    val filteredDf = spark.createDataFrame(sourceRows.asJava, schema)
       .filter("id > 10")
 
     filteredDf.writeTo(s"h2.$tableName").overwrite(lit(true))
@@ -3387,7 +3341,7 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
     val pushdownResult = sql(
       s"SELECT * FROM h2.$tableName WHERE time_col > '10:00:00' ORDER BY id"
     )
-    checkFiltersRemoved(pushdownResult)  // Verify filter pushdown works
+    checkFiltersRemoved(pushdownResult)
 
     val pushdownRows = pushdownResult.collect()
     assert(pushdownRows.length > 0)
