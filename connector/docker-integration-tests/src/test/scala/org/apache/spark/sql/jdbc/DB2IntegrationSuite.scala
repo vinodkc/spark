@@ -168,9 +168,7 @@ class DB2IntegrationSuite extends SharedJDBCIntegrationSuite {
     val df1 = sqlContext.read.jdbc(jdbcUrl, "numbers", new Properties)
       .selectExpr("small", "med", "big", "deci", "flt", "dbl", "real",
       "cast(decflt as decimal(31, 5)) as decflt")
-    // Exclude TIME column (t) as JDBC write doesn't support TIME type yet
     val df2 = sqlContext.read.jdbc(jdbcUrl, "dates", new Properties)
-      .select("d", "ts")
     val df3 = sqlContext.read.jdbc(jdbcUrl, "strings", new Properties)
     df1.write.jdbc(jdbcUrl, "numberscopy", new Properties)
     df2.write.jdbc(jdbcUrl, "datescopy", new Properties)

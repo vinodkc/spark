@@ -210,6 +210,7 @@ class MySQLIntegrationSuite extends SharedJDBCIntegrationSuite {
         LocalTime.of(13, 31, 24),
         LocalDateTime.of(1996, 1, 1, 1, 23, 45),
         Timestamp.valueOf("2009-02-13 23:31:30"),
+
         Date.valueOf("2001-01-01"),
         LocalTime.of(13, 31, 24, 123000000)))
     }
@@ -245,9 +246,7 @@ class MySQLIntegrationSuite extends SharedJDBCIntegrationSuite {
 
   test("Basic write test") {
     val df1 = sqlContext.read.jdbc(jdbcUrl, "numbers", new Properties)
-    // Exclude TIME columns (t, t1) as JDBC write doesn't support TIME type yet
     val df2 = sqlContext.read.jdbc(jdbcUrl, "dates", new Properties)
-      .select("d", "dt", "ts", "yr")
     val df3 = sqlContext.read.jdbc(jdbcUrl, "strings", new Properties)
     df1.write.jdbc(jdbcUrl, "numberscopy", new Properties)
     df2.write.jdbc(jdbcUrl, "datescopy", new Properties)

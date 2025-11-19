@@ -164,7 +164,7 @@ object JdbcUtils extends Logging with SQLConfHelper {
       // Note that some dialects override this setting, e.g. as SQL Server.
       case TimestampNTZType => Option(JdbcType("TIMESTAMP", java.sql.Types.TIMESTAMP))
       case DateType => Option(JdbcType("DATE", java.sql.Types.DATE))
-      case _: TimeType => Option(JdbcType("TIME", java.sql.Types.TIME))
+      case t: TimeType => Option(JdbcType(s"TIME(${t.precision})", java.sql.Types.TIME))
       case t: DecimalType => Option(
         JdbcType(s"DECIMAL(${t.precision},${t.scale})", java.sql.Types.DECIMAL))
       case _ => None
@@ -560,7 +560,7 @@ object JdbcUtils extends Logging with SQLConfHelper {
           row.update(pos, null)
         }
 
-    case timeType: TimeType =>
+    case _: TimeType =>
       (rs: ResultSet, row: InternalRow, pos: Int) =>
         val lt = rs.getObject(pos + 1, classOf[java.time.LocalTime])
         if (lt != null) {
@@ -743,6 +743,10 @@ object JdbcUtils extends Logging with SQLConfHelper {
         (stmt: PreparedStatement, row: Row, pos: Int) =>
           stmt.setDate(pos + 1, row.getAs[java.sql.Date](pos))
       }
+
+    case _: TimeType =>
+      (stmt: PreparedStatement, row: Row, pos: Int) =>
+        stmt.setObject(pos + 1, row.getAs[java.time.LocalTime](pos))
 
     case t: DecimalType =>
       (stmt: PreparedStatement, row: Row, pos: Int) =>

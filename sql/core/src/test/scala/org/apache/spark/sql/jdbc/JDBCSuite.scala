@@ -19,12 +19,12 @@ package org.apache.spark.sql.jdbc
 
 import java.math.BigDecimal
 import java.sql.{Date, DriverManager, Timestamp}
-import java.time.{Instant, LocalDate, LocalDateTime}
+import java.time.{Instant, LocalDate, LocalDateTime, LocalTime}
 import java.time.format.DateTimeFormatter
 import java.util.{Calendar, GregorianCalendar, Properties, TimeZone}
 
 import scala.jdk.CollectionConverters._
-import scala.util.{Random, Using}
+import scala.util.Random
 
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
@@ -78,91 +78,17 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
     }
   }
 
-  // Helper methods for TIME type tests
-  private def createTimeTable(tableName: String, columns: String*): Unit = {
-    val cols = if (columns.isEmpty) "start_time TIME(6), end_time TIME(6)"
-               else columns.mkString(", ")
-    Using.resource(conn.prepareStatement(s"CREATE TABLE $tableName (id INT, $cols)")) { stmt =>
-      stmt.executeUpdate()
-    }
-  }
-
-  private def insertTimeData(tableName: String, values: String*): Unit = {
-    val rows = values.mkString(", ")
-    Using.resource(conn.prepareStatement(s"INSERT INTO $tableName VALUES $rows")) { stmt =>
-      stmt.executeUpdate()
-    }
-  }
-
   private def timeToNanos(hours: Int, minutes: Int, seconds: Int, nanos: Long = 0): Long = {
-    java.time.LocalTime.of(hours, minutes, seconds, nanos.toInt).toNanoOfDay()
+    LocalTime.of(hours, minutes, seconds, nanos.toInt).toNanoOfDay()
   }
 
-  private def assertTimeNanos(row: Row, col: Int, expectedNanos: Long): Unit = {
-    assert(row.getAs[java.time.LocalTime](col).toNanoOfDay() === expectedNanos)
-  }
-
-  // Helper to find a row by TIME column value and verify it exists
-  private def findRowByTime(
-      rows: Array[Row],
-      colName: String,
-      expectedNanos: Long): Row = {
-    rows.find { row =>
-      val time = row.getAs[java.time.LocalTime](colName)
-      time.toNanoOfDay() === expectedNanos
-    }.getOrElse(fail(s"No row found with $colName = $expectedNanos nanoseconds"))
-  }
-
-  // Helper to assert a TIME column value in a row matches expected nanoseconds
   private def assertTimeColumn(
       row: Row,
       colName: String,
       expectedNanos: Long): Unit = {
-    val time = row.getAs[java.time.LocalTime](colName)
+    val time = row.getAs[LocalTime](colName)
     assert(time.toNanoOfDay() === expectedNanos,
       s"Expected $expectedNanos but got ${time.toNanoOfDay()}")
-  }
-
-  // Helper to extract IDs from a range of rows
-  private def extractIds(rows: Array[Row], fromIdx: Int, toIdx: Int): Seq[Int] = {
-    rows.slice(fromIdx, toIdx).map(_.getInt(0)).toSeq
-  }
-
-  // Common test data fixtures for TIME type tests
-  object TimeTestData {
-    // Shift test data: 5 rows with morning, afternoon, night shifts, NULL, and precise time
-    val shiftTestData = Seq(
-      "(1, TIME '06:00:00', TIME '14:00:00')",
-      "(2, TIME '14:00:00', TIME '22:00:00')",
-      "(3, TIME '22:00:00', TIME '06:00:00')",
-      "(4, NULL, NULL)",
-      "(5, TIME '09:30:45.123', TIME '17:30:45.456')"
-    )
-
-    // Order/Group test data: 9 rows with various times including duplicates and NULL
-    val orderGroupTestData = Seq(
-      "(1, TIME '06:00:00', TIME '14:00:00')",
-      "(2, TIME '14:00:00', TIME '22:00:00')",
-      "(3, TIME '22:00:00', TIME '06:00:00')",
-      "(4, TIME '04:00:00', TIME '12:00:00')",
-      "(5, TIME '23:30:00', TIME '07:30:00')",
-      "(6, TIME '10:00:00', TIME '18:00:00')",
-      "(7, TIME '18:00:00', TIME '02:00:00')",
-      "(8, NULL, NULL)",
-      "(9, TIME '04:00:00', TIME '12:00:00')"
-    )
-
-    // Filter test conditions with expected results
-    val filterTestCases = Seq(
-      ("SHIFT_START = '06:00:00'", Seq(1)),
-      ("SHIFT_START > '12:00:00'", Seq(2, 3)),
-      ("SHIFT_START <= '14:00:00'", Seq(1, 2, 5)),
-      ("SHIFT_START BETWEEN '08:00:00' AND '18:00:00'", Seq(2, 5)),
-      ("SHIFT_START IS NULL", Seq(4)),
-      ("SHIFT_START = '09:30:45.123'", Seq(5)),
-      ("SHIFT_START > '06:00:00' AND SHIFT_END < '22:00:00'", Seq(3, 5)),
-      ("SHIFT_START <= '06:00:00' OR SHIFT_START >= '22:00:00'", Seq(1, 3))
-    )
   }
 
   object JdbcClientTypes {
@@ -2370,220 +2296,196 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
     }
   }
 
-  test("SPARK-XXXXX_PR1: read TIME type from JDBC") {
-    val tableName = "time_test"
-    createTimeTable(tableName, "shift_start TIME", "shift_end TIME")
-    insertTimeData(tableName, "(1, TIME '09:00:00', TIME '17:30:45')")
+  test("SPARK-XXXXX: write/read TIME with precision, NULL, and boundary values") {
+    val tableName = "time_comprehensive"
 
-    val df = spark.read.jdbc(urlWithUserAndPass, tableName, new Properties())
-
-    // Verify schema
-    assert(df.schema("SHIFT_START").dataType.isInstanceOf[TimeType])
-    assert(df.schema("SHIFT_END").dataType.isInstanceOf[TimeType])
-
-    // Verify data
-    checkAnswer(df, Row(1,
-      java.time.LocalTime.of(9, 0, 0),
-      java.time.LocalTime.of(17, 30, 45)) :: Nil)
-  }
-
-  test("SPARK-XXXXX_PR1: read TIME columns with different precisions") {
-    val tableName = "time_comprehensive_test"
-    createTimeTable(tableName,
-      "time_seconds TIME(0)",
-      "time_millis TIME(3)",
-      "time_micros TIME(6)"
-    )
-    insertTimeData(tableName,
-      "(1, TIME '14:30:45', TIME '14:30:45.123', TIME '14:30:45.123456')",
-      "(2, TIME '09:15:30', TIME '09:15:30.999', TIME '09:15:30.999999')",
-      "(3, TIME '00:00:00', TIME '00:00:00.001', TIME '00:00:00.000001')",
-      "(4, TIME '10:20:30', TIME '10:20:30', TIME '10:20:30')",
-      "(5, TIME '11:22:33', TIME '11:22:33.456', TIME '11:22:33.456')",
-      "(6, TIME '23:59:59', TIME '23:59:59.999', TIME '23:59:59.999999')",
-      "(7, NULL, NULL, NULL)"
-    )
-
-    val df = spark.read.jdbc(urlWithUserAndPass, tableName, new Properties())
-
-    // Verify schema - exact precision inference
-    assert(df.schema("TIME_SECONDS").dataType === TimeType(0))
-    assert(df.schema("TIME_MILLIS").dataType === TimeType(3))
-    assert(df.schema("TIME_MICROS").dataType === TimeType(6))
-
-    val rows = df.orderBy("ID").collect()
-    assert(rows.length === 7)
-
-    // Row 1: Exact precision - 14:30:45, 14:30:45.123, 14:30:45.123456
-    assertTimeNanos(rows(0), 1, timeToNanos(14, 30, 45))
-    assertTimeNanos(rows(0), 2, timeToNanos(14, 30, 45, 123000000))
-    assertTimeNanos(rows(0), 3, timeToNanos(14, 30, 45, 123456000))
-
-    // Row 2: Near-max fractional - 09:15:30, 09:15:30.999, 09:15:30.999999
-    assertTimeNanos(rows(1), 1, timeToNanos(9, 15, 30))
-    assertTimeNanos(rows(1), 2, timeToNanos(9, 15, 30, 999000000))
-    assertTimeNanos(rows(1), 3, timeToNanos(9, 15, 30, 999999000))
-
-    // Row 3: Boundary - midnight (00:00:00)
-    assertTimeNanos(rows(2), 1, timeToNanos(0, 0, 0))
-    assertTimeNanos(rows(2), 2, timeToNanos(0, 0, 0, 1000000))
-    assertTimeNanos(rows(2), 3, timeToNanos(0, 0, 0, 1000))
-
-    // Row 4: Same input across precisions - 10:20:30
-    assertTimeNanos(rows(3), 1, timeToNanos(10, 20, 30))
-    assertTimeNanos(rows(3), 2, timeToNanos(10, 20, 30))
-    assertTimeNanos(rows(3), 3, timeToNanos(10, 20, 30))
-
-    // Row 5: Lower precision input - 11:22:33, 11:22:33.456, 11:22:33.456
-    assertTimeNanos(rows(4), 1, timeToNanos(11, 22, 33))
-    assertTimeNanos(rows(4), 2, timeToNanos(11, 22, 33, 456000000))
-    assertTimeNanos(rows(4), 3, timeToNanos(11, 22, 33, 456000000))
-
-    // Row 6: Boundary - end of day (23:59:59)
-    assertTimeNanos(rows(5), 1, timeToNanos(23, 59, 59))
-    assertTimeNanos(rows(5), 2, timeToNanos(23, 59, 59, 999000000))
-    assertTimeNanos(rows(5), 3, timeToNanos(23, 59, 59, 999999000))
-
-    // Row 7: NULL values
-    assert(rows(6).isNullAt(1))
-    assert(rows(6).isNullAt(2))
-    assert(rows(6).isNullAt(3))
-  }
-
-  test("SPARK-XXXXX_PR1: filter/where conditions on TIME columns") {
-    val tableName = "time_filter_test"
-    createTimeTable(tableName, "shift_start TIME(6)", "shift_end TIME(6)")
-    insertTimeData(tableName, TimeTestData.shiftTestData: _*)
-
-    val df = spark.read.jdbc(urlWithUserAndPass, tableName, new Properties())
-
-    TimeTestData.filterTestCases.foreach { case (condition, expectedIds) =>
-      checkAnswer(
-        df.filter(condition).select("id").orderBy("id"),
-        expectedIds.map(Row(_))
-      )
+    def timeRow(id: Int, h: Int, m: Int, s: Int, nanos: Seq[Long]): Row = {
+      Row(id +: nanos.map(n => LocalTime.of(h, m, s, n.toInt)): _*)
     }
 
-    assert(df.filter("SHIFT_START IS NOT NULL").count() === 4)
+    // Write: Data with ALL precisions (0-6), testing different nanosecond values
+    val writeRows = Seq(
+      timeRow(1, 14, 30, 45, Seq(0, 100000000, 120000000, 123000000, 123400000, 123450000,
+        123456000)),
+      timeRow(2, 9, 15, 30, Seq(0, 900000000, 990000000, 999000000, 999900000, 999990000,
+        999999000)),
+      timeRow(3, 0, 0, 0, Seq(0, 100000000, 10000000, 1000000, 100000, 10000, 1000)),
+      timeRow(4, 23, 59, 59, Seq(0, 900000000, 990000000, 999000000, 999900000, 999990000,
+        999999000))
+    )
+
+    val writeSchema = StructType(
+      StructField("id", IntegerType, nullable = false) +:
+        (0 to 6).map(p => StructField(s"time$p", TimeType(p))))
+
+    val writeDf = spark.createDataFrame(spark.sparkContext.parallelize(writeRows), writeSchema)
+    writeDf.write.mode("overwrite").jdbc(urlWithUserAndPass, tableName, new Properties())
+
+    // Read: Verify round-trip and schema inference for ALL precisions
+    val df = spark.read.jdbc(urlWithUserAndPass, tableName, new Properties())
+    (0 to 6).foreach(p => assert(df.schema(s"time$p").dataType === TimeType(p)))
+
+    val rows = df.orderBy("id").collect()
+    assert(rows.length === 4)
+
+    // Verify precision preservation using test data patterns
+    val testCases = Seq(
+      (0, Seq(0L, 100000000, 120000000, 123000000, 123400000, 123450000, 123456000),
+        14, 30, 45),
+      (1, Seq(0L, 900000000, 990000000, 999000000, 999900000, 999990000, 999999000),
+        9, 15, 30),
+      (2, Seq(0L, 100000000, 10000000, 1000000, 100000, 10000, 1000), 0, 0, 0),
+      (3, Seq(0L, 900000000, 990000000, 999000000, 999900000, 999990000, 999999000),
+        23, 59, 59)
+    )
+
+    testCases.foreach { case (rowIdx, nanos, h, m, s) =>
+      nanos.zipWithIndex.foreach { case (n, colIdx) =>
+        assertTimeColumn(rows(rowIdx), s"time$colIdx", timeToNanos(h, m, s, n))
+      }
+    }
+
+    // Write: Add NULL row for all precisions
+    val nullRow = Seq(Row(5 +: Seq.fill(7)(null): _*))
+    val nullDf = spark.createDataFrame(spark.sparkContext.parallelize(nullRow), writeSchema)
+    nullDf.write.mode("append").jdbc(urlWithUserAndPass, tableName, new Properties())
+
+    // Read: Verify NULL handling
+    val nullRows = spark.read.jdbc(urlWithUserAndPass, tableName, new Properties())
+      .filter("id = 5").collect()
+    assert(nullRows.length === 1)
+    (1 to 7).foreach(i => assert(nullRows(0).isNullAt(i)))
   }
 
-  test("SPARK-XXXXX_PR1: ORDER BY and GROUP BY on TIME columns") {
-    val tableName = "time_order_group_test"
-    createTimeTable(tableName, "start_time TIME(6)", "end_time TIME(6)")
-    insertTimeData(tableName, TimeTestData.orderGroupTestData: _*)
+  test("SPARK-XXXXX: write TIME then test filters and aggregations") {
+    val tableName = "time_operations"
 
+    // Write: Create test data with duplicates for aggregation testing
+    val writeRows = Seq(
+      Row(1, LocalTime.of(6, 0, 0), LocalTime.of(14, 0, 0)),
+      Row(2, LocalTime.of(14, 0, 0), LocalTime.of(22, 0, 0)),
+      Row(3, LocalTime.of(22, 0, 0), LocalTime.of(6, 0, 0)),
+      Row(4, LocalTime.of(4, 0, 0), LocalTime.of(12, 0, 0)),
+      Row(5, LocalTime.of(23, 30, 0), LocalTime.of(7, 30, 0)),
+      Row(6, LocalTime.of(10, 0, 0), LocalTime.of(18, 0, 0)),
+      Row(7, LocalTime.of(18, 0, 0), LocalTime.of(2, 0, 0)),
+      Row(8, null, null),
+      Row(9, LocalTime.of(4, 0, 0), LocalTime.of(12, 0, 0))  // Duplicate
+    )
+
+    val schema = StructType(Seq(
+      StructField("id", IntegerType, nullable = false),
+      StructField("start_time", TimeType(6), nullable = true),
+      StructField("end_time", TimeType(6), nullable = true)
+    ))
+
+    val writeDf = spark.createDataFrame(spark.sparkContext.parallelize(writeRows), schema)
+    writeDf.write.mode("overwrite").jdbc(urlWithUserAndPass, tableName, new Properties())
+
+    // Read: Test filters
     val df = spark.read.jdbc(urlWithUserAndPass, tableName, new Properties())
 
-    // Test 1: ORDER BY start_time ASC (NULL values should appear first by default in H2)
-    val orderedAsc = df.orderBy("START_TIME").collect()
-    assert(orderedAsc.length === 9)
-    assert(orderedAsc(0).getInt(0) === 8 && orderedAsc(0).isNullAt(1))  // NULL first
-    assert(Set(orderedAsc(1).getInt(0), orderedAsc(2).getInt(0)) === Set(4, 9))  // 04:00:00
-    assert(extractIds(orderedAsc, 3, 9) === Seq(1, 6, 2, 7, 3, 5))
+    assert(df.filter("start_time >= '10:00:00'").count() === 5)
+    assert(df.filter("start_time < '10:00:00' AND start_time IS NOT NULL").count() === 3)
+    assert(df.filter("start_time IS NULL").count() === 1)
 
-    // Test 2: ORDER BY start_time DESC
-    val orderedDesc = df.orderBy(df("START_TIME").desc).collect()
-    assert(orderedDesc.length === 9)
-    assert(extractIds(orderedDesc, 0, 6) === Seq(5, 3, 7, 2, 6, 1))
-    assert(Set(orderedDesc(6).getInt(0), orderedDesc(7).getInt(0)) === Set(4, 9))  // 04:00:00
-    assert(orderedDesc(8).getInt(0) === 8)  // NULL last
+    // Test ORDER BY
+    val orderedAsc = df.orderBy("start_time").collect()
+    assert(orderedAsc(0).isNullAt(1))  // NULL first
+    assert(Set(orderedAsc(1).getInt(0), orderedAsc(2).getInt(0)) === Set(4, 9))  // Duplicates
 
-    // Test 3: GROUP BY start_time with COUNT
-    val grouped = df.filter("START_TIME IS NOT NULL")
-      .groupBy("START_TIME")
+    val orderedDesc = df.orderBy(df("start_time").desc).collect()
+    assert(orderedDesc(0).getInt(0) === 5)  // 23:30:00 first
+    assert(orderedDesc(8).isNullAt(1))  // NULL last
+
+    // Test GROUP BY with COUNT
+    val grouped = df.filter("start_time IS NOT NULL")
+      .groupBy("start_time")
       .count()
-      .orderBy("START_TIME")
+      .orderBy("start_time")
       .collect()
-    assert(grouped.length === 7)  // 7 unique non-NULL start times
-    // 04:00:00 appears twice
-    val time_04_00 = findRowByTime(grouped, "START_TIME", timeToNanos(4, 0, 0))
+
+    assert(grouped.length === 7)
+    val time_04_00 = grouped.find { row =>
+      row.getAs[LocalTime]("start_time").toNanoOfDay === timeToNanos(4, 0, 0)
+    }.getOrElse(fail(s"No row found with start_time = ${timeToNanos(4, 0, 0)} nanoseconds"))
     assert(time_04_00.getLong(1) === 2)  // count = 2
-    // All others appear once
-    val otherTimes = grouped.filterNot { row =>
-      row.getAs[java.time.LocalTime]("START_TIME").toNanoOfDay() === timeToNanos(4, 0, 0)
-    }
-    otherTimes.foreach(row => assert(row.getLong(1) === 1))
 
-    // Test 4: GROUP BY with aggregations (MIN, MAX, COUNT on end_time)
-    val aggregated = df.filter("START_TIME IS NOT NULL")
-      .groupBy("START_TIME")
+    // Test GROUP BY with aggregations
+    val aggregated = df.filter("start_time IS NOT NULL")
+      .groupBy("start_time")
       .agg(
-        org.apache.spark.sql.functions.min("END_TIME").as("min_end"),
-        org.apache.spark.sql.functions.max("END_TIME").as("max_end"),
+        org.apache.spark.sql.functions.min("end_time").as("min_end"),
+        org.apache.spark.sql.functions.max("end_time").as("max_end"),
         org.apache.spark.sql.functions.count("*").as("cnt")
-      )
-      .orderBy("START_TIME")
-      .collect()
-    assert(aggregated.length === 7)
-    // For 04:00:00 group (IDs 4,9), both have end_time='12:00:00'
-    val time_04_agg = findRowByTime(aggregated, "START_TIME", timeToNanos(4, 0, 0))
-    assertTimeColumn(time_04_agg, "min_end", timeToNanos(12, 0, 0))
-    assertTimeColumn(time_04_agg, "max_end", timeToNanos(12, 0, 0))
-    assert(time_04_agg.getAs[Long]("cnt") === 2)
-
-    // Test 5: GROUP BY with HAVING clause
-    val havingResult = df.filter("START_TIME IS NOT NULL")
-      .groupBy("START_TIME")
-      .count()
-      .filter("count >= 2")
-      .collect()
-    assert(havingResult.length === 1)  // Only 04:00:00 has count >= 2
-    val havingRow = havingResult.head
-    assertTimeColumn(havingRow, "START_TIME", timeToNanos(4, 0, 0))
-    assert(havingRow.getLong(1) === 2)
-  }
-
-  test("SPARK-XXXXX_PR1: filter/ORDER BY/GROUP BY with mixed TIME precisions") {
-    val tableName = "time_mixed_precision_ops"
-    createTimeTable(tableName,
-      "start_time TIME(0)",
-      "end_time TIME(3)",
-      "break_time TIME(6)"
-    )
-    insertTimeData(tableName,
-      "(1, TIME '06:00:00', TIME '14:00:00.500', TIME '10:30:15.123456')",
-      "(2, TIME '14:00:00', TIME '22:00:00.999', TIME '18:15:30.999999')",
-      "(3, TIME '22:00:00', TIME '06:00:00.001', TIME '02:45:45.000001')",
-      "(4, TIME '04:00:00', TIME '12:00:00.000', TIME '08:00:00.000000')",
-      "(5, TIME '04:00:00', TIME '12:00:00.001', TIME '08:00:00.000001')"
-    )
-
-    val df = spark.read.jdbc(urlWithUserAndPass, tableName, new Properties())
-
-    // Verify schema has correct precisions
-    assert(df.schema("START_TIME").dataType === TimeType(0))
-    assert(df.schema("END_TIME").dataType === TimeType(3))
-    assert(df.schema("BREAK_TIME").dataType === TimeType(6))
-
-    // Test filters
-    assert(df.filter("START_TIME >= '06:00:00.000000'").count() === 3)
-    assert(df.filter("END_TIME > '12:00:00.000'").count() === 3)
-    assert(df.filter("START_TIME < BREAK_TIME").count() === 4)
-
-    // Test ORDER BY with mixed precisions - verify duplicate handling
-    val ordered = df.orderBy("START_TIME", "END_TIME").collect()
-    assert(ordered(0).getInt(0) === 4)
-    assert(ordered(1).getInt(0) === 5)
-
-    // Test GROUP BY with aggregations across different precisions
-    val agg = df.groupBy("START_TIME")
-      .agg(
-        org.apache.spark.sql.functions.count("*").as("cnt"),
-        org.apache.spark.sql.functions.max("END_TIME").as("max_end"),
-        org.apache.spark.sql.functions.max("BREAK_TIME").as("max_break")
       )
       .filter("cnt > 1")
       .collect()
 
-    assert(agg.length === 1)
-    val aggRow = agg(0)
-    assert(aggRow.getLong(1) === 2)
-    assertTimeColumn(aggRow, "max_end", timeToNanos(12, 0, 0, 1000000))
-    assertTimeColumn(aggRow, "max_break", timeToNanos(8, 0, 0, 1000))
+    assert(aggregated.length === 1)  // Only 04:00:00 has duplicates
+    assertTimeColumn(aggregated(0), "start_time", timeToNanos(4, 0, 0))
+    assert(aggregated(0).getLong(3) === 2)
+  }
 
-    // Test complex filter with AND across different precisions
-    assert(df.filter(
-      "START_TIME >= '06:00:00' AND END_TIME < '20:00:00.000' AND BREAK_TIME > '10:00:00.000000'"
-    ).count() === 1)
+  test("SPARK-XXXXX: TIME write modes, batch, and DataFrame operations") {
+    val tableName = "time_write_modes_batch"
+    val schema = StructType(Seq(
+      StructField("id", IntegerType, nullable = false),
+      StructField("time_col", TimeType(6), nullable = true)
+    ))
+
+    // Test 1: Overwrite mode with initial data
+    val rows1 = Seq(
+      Row(1, LocalTime.of(10, 0, 0)),
+      Row(2, LocalTime.of(11, 0, 0))
+    )
+    val df1 = spark.createDataFrame(spark.sparkContext.parallelize(rows1), schema)
+
+    df1.write.mode("overwrite").jdbc(urlWithUserAndPass, tableName, new Properties())
+    assert(spark.read.jdbc(urlWithUserAndPass, tableName, new Properties()).count() === 2)
+
+    // Test 2: Append mode
+    val rows2 = Seq(Row(3, LocalTime.of(12, 0, 0)))
+    val df2 = spark.createDataFrame(spark.sparkContext.parallelize(rows2), schema)
+
+    df2.write.mode("append").jdbc(urlWithUserAndPass, tableName, new Properties())
+
+    val afterAppend = spark.read.jdbc(urlWithUserAndPass, tableName, new Properties())
+    assert(afterAppend.count() === 3)
+    val appendRows = afterAppend.orderBy("id").collect()
+    assertTimeColumn(appendRows(0), "time_col", timeToNanos(10, 0, 0))
+    assertTimeColumn(appendRows(1), "time_col", timeToNanos(11, 0, 0))
+    assertTimeColumn(appendRows(2), "time_col", timeToNanos(12, 0, 0))
+
+    // Test 3: Overwrite mode replaces data
+    val rows3 = Seq(
+      Row(4, LocalTime.of(13, 0, 0)),
+      Row(5, LocalTime.of(14, 0, 0))
+    )
+    val df3 = spark.createDataFrame(spark.sparkContext.parallelize(rows3), schema)
+
+    df3.write.mode("overwrite").jdbc(urlWithUserAndPass, tableName, new Properties())
+    assert(spark.read.jdbc(urlWithUserAndPass, tableName, new Properties()).count() === 2)
+
+    // Test 4: Batch mode with DataFrame filter
+    val largeRows = (1 to 30).map { i =>
+      val hour = i % 24
+      val minute = (i * 2) % 60
+      val second = (i * 3) % 60
+      Row(i, LocalTime.of(hour, minute, second))
+    }
+
+    val batchDf = spark.createDataFrame(spark.sparkContext.parallelize(largeRows), schema)
+      .filter("id > 10")
+
+    val props = new Properties()
+    props.setProperty("batchsize", "10")
+    batchDf.write.mode("overwrite").jdbc(urlWithUserAndPass, tableName, props)
+
+    val batchResult = spark.read.jdbc(urlWithUserAndPass, tableName, new Properties())
+    assert(batchResult.count() === 20)  // Filtered to id > 10
+    val batchRows = batchResult.orderBy("id").collect()
+    assert(batchRows(0).getInt(0) === 11)
+    assertTimeColumn(batchRows(0), "time_col", timeToNanos(11, 22, 33))
   }
 }

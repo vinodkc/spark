@@ -291,9 +291,7 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
 
   test("Basic write test") {
     val df1 = spark.read.jdbc(jdbcUrl, "numbers", new Properties)
-    // Exclude TIME column (f) as JDBC write doesn't support TIME type yet
     val df2 = spark.read.jdbc(jdbcUrl, "dates", new Properties)
-      .select("a", "b", "c", "d", "e")
     val df3 = spark.read.jdbc(jdbcUrl, "strings", new Properties)
     df1.write.jdbc(jdbcUrl, "numberscopy", new Properties)
     df2.write.jdbc(jdbcUrl, "datescopy", new Properties)
