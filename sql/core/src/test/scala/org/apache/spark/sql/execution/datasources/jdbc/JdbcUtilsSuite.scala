@@ -72,9 +72,9 @@ class JdbcUtilsSuite extends SparkFunSuite {
   }
 
   test("SPARK-XXXXX_PR1: getCommonJDBCType for TimeType") {
-    // TimeType with all valid precisions (0-6) should map to TIME
-    val expected = Some(JdbcType("TIME", java.sql.Types.TIME))
+    // TimeType with all valid precisions (0-6) should map to TIME with precision
     (0 to 6).foreach { precision =>
+      val expected = Some(JdbcType(s"TIME($precision)", java.sql.Types.TIME))
       assert(JdbcUtils.getCommonJDBCType(TimeType(precision)) === expected)
     }
   }
