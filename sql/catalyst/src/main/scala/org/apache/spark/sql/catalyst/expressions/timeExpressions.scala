@@ -52,8 +52,7 @@ import org.apache.spark.unsafe.types.UTF8String
   arguments = """
     Arguments:
       * str - A string to be parsed to time.
-      * format - Time format pattern to follow. See <a href="https://spark.apache.org/docs/latest/sql-ref-datetime-pattern.html">Datetime Patterns</a> for valid
-                 time format patterns.
+      * format - Time format pattern.
   """,
   examples = """
     Examples:
