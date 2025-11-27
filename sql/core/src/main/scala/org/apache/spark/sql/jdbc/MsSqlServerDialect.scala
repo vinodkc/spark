@@ -166,6 +166,14 @@ private case class MsSqlServerDialect() extends JdbcDialect with NoLegacyJDBCErr
   override def getJDBCType(dt: DataType): Option[JdbcType] = dt match {
     case TimestampType => Some(JdbcType("DATETIME", java.sql.Types.TIMESTAMP))
     case TimestampNTZType => Some(JdbcType("DATETIME", java.sql.Types.TIMESTAMP))
+    case TimeType(precision) =>
+      if (SQLConf.get.legacyJdbcTimeAsTimestamp) {
+        // Legacy mode: map TimeType to DATETIME for backward compatibility
+        Some(JdbcType("DATETIME", java.sql.Types.TIMESTAMP))
+      } else {
+        // New mode: map TimeType to TIME(precision)
+        Some(JdbcType(s"TIME($precision)", java.sql.Types.TIME))
+      }
     case StringType => Some(JdbcType("NVARCHAR(MAX)", java.sql.Types.NVARCHAR))
     case BooleanType => Some(JdbcType("BIT", java.sql.Types.BIT))
     case BinaryType => Some(JdbcType("VARBINARY(MAX)", java.sql.Types.VARBINARY))
@@ -173,6 +181,15 @@ private case class MsSqlServerDialect() extends JdbcDialect with NoLegacyJDBCErr
       Some(JdbcType("SMALLINT", java.sql.Types.SMALLINT))
     case ByteType => Some(JdbcType("SMALLINT", java.sql.Types.TINYINT))
     case _ => None
+  }
+
+  override def writeTimeValue(
+      stmt: java.sql.PreparedStatement,
+      pos: Int,
+      time: java.time.LocalTime): Unit = {
+    // Write TimeType as TIME with proper precision
+    // Note: Legacy flag only affects reading TIME columns, not writing them
+    stmt.setObject(pos, time, java.sql.Types.TIME)
   }
 
   override def isCascadingTruncateTable(): Option[Boolean] = Some(false)

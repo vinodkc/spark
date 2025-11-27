@@ -105,4 +105,20 @@ private case class DerbyDialect() extends JdbcDialect with NoLegacyJDBCError {
   override def getLimitClause(limit: Integer): String = {
     ""
   }
+
+  // Derby TIME type does not support fractional seconds (seconds only, no precision parameter)
+  override def readTimeValue(rs: java.sql.ResultSet, pos: Int): java.time.LocalTime = {
+    // Derby JDBC driver doesn't support getObject(pos, classOf[LocalTime])
+    // Must use getTime() and convert to LocalTime
+    val sqlTime = rs.getTime(pos)
+    if (sqlTime == null) null else sqlTime.toLocalTime
+  }
+
+  override def writeTimeValue(
+      stmt: java.sql.PreparedStatement,
+      pos: Int,
+      time: java.time.LocalTime): Unit = {
+    val sqlTime = java.sql.Time.valueOf(time)
+    stmt.setTime(pos, sqlTime)
+  }
 }

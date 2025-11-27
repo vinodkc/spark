@@ -177,7 +177,23 @@ private case class OracleDialect() extends JdbcDialect with SQLConfHelper with N
     case VarcharType(n) => Some(JdbcType(s"VARCHAR2($n)", java.sql.Types.VARCHAR))
     case TimestampType if !conf.legacyOracleTimestampMappingEnabled =>
       Some(JdbcType("TIMESTAMP WITH LOCAL TIME ZONE", TIMESTAMP_LTZ))
+    // Oracle doesn't have TIME data type - map TimeType to TIMESTAMP
+    // This ensures TimeType DataFrames can be written to Oracle databases
+    // regardless of spark.sql.legacy.jdbc.timeAsTimestamp.enabled setting
+    case _: TimeType =>
+      Some(JdbcType("TIMESTAMP", java.sql.Types.TIMESTAMP))
     case _ => None
+  }
+
+  override def writeTimeValue(
+      stmt: java.sql.PreparedStatement,
+      pos: Int,
+      time: java.time.LocalTime): Unit = {
+    // Oracle doesn't have TIME data type - write TimeType as TIMESTAMP
+    // Convert LocalTime to Timestamp at epoch date (1970-01-01)
+    val timestamp = java.sql.Timestamp.valueOf(
+      java.time.LocalDateTime.of(java.time.LocalDate.ofEpochDay(0), time))
+    stmt.setTimestamp(pos, timestamp)
   }
 
   override def compileValue(value: Any): Any = value match {

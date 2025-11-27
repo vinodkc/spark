@@ -5996,6 +5996,18 @@ object SQLConf {
     .booleanConf
     .createWithDefault(false)
 
+  val LEGACY_JDBC_TIME_AS_TIMESTAMP =
+    buildConf("spark.sql.legacy.jdbc.timeAsTimestamp.enabled")
+      .internal()
+      .doc("When set to true (default), JDBC TIME type columns are read as " +
+        "TimestampType/TimestampNTZType for backward compatibility with Spark versions prior to " +
+        "4.2.0. In this legacy behavior, TIME values appear as timestamps at epoch date " +
+        "(1970-01-01). When false, TIME columns are correctly read as TimeType with proper " +
+        "time-of-day semantics (JDBC TIME type support added in 4.2.0).")
+      .version("4.2.0")
+      .booleanConf
+      .createWithDefault(true)
+
   val MAX_CONCURRENT_OUTPUT_FILE_WRITERS = buildConf("spark.sql.maxConcurrentOutputFileWriters")
     .internal()
     .doc("Maximum number of output file writers to use concurrently. If number of writers " +
@@ -7803,6 +7815,8 @@ class SQLConf extends Serializable with Logging with SqlApiConf {
   def cliPrintHeader: Boolean = getConf(SQLConf.CLI_PRINT_HEADER)
 
   def legacyIntervalEnabled: Boolean = getConf(LEGACY_INTERVAL_ENABLED)
+
+  def legacyJdbcTimeAsTimestamp: Boolean = getConf(LEGACY_JDBC_TIME_AS_TIMESTAMP)
 
   def decorrelateInnerQueryEnabled: Boolean = getConf(SQLConf.DECORRELATE_INNER_QUERY_ENABLED)
 

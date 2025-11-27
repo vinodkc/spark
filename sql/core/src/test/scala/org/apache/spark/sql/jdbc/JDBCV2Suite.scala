@@ -41,7 +41,7 @@ import org.apache.spark.sql.execution.datasources.v2.jdbc.JDBCTableCatalog
 import org.apache.spark.sql.functions.{abs, acos, asin, atan, atan2, avg, ceil, coalesce, cos, cosh, cot, count, count_distinct, degrees, exp, floor, lit, log => logarithm, log10, not, pow, radians, round, signum, sin, sinh, sqrt, sum, tan, tanh, udf, when}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.test.SharedSparkSession
-import org.apache.spark.sql.types.{DataType, IntegerType, StringType}
+import org.apache.spark.sql.types.{DataType, IntegerType, StringType, TimeType}
 import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.util.Utils
 
@@ -3129,5 +3129,171 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
     )
 
     assertResult(expectedMetadata) { jdbcRdd.getDatabaseMetadata }
+  }
+
+  test("V2 TIME type with legacy flag=false (read, TIME(0-6))") {
+    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "false") {
+      withTable("h2.test.time_v2_new") {
+        sql("CREATE TABLE h2.test.time_v2_new " +
+          "(id INT, time_p0 TIME(0), time_p1 TIME(1), time_p2 TIME(2), time_p3 TIME(3), " +
+          "time_p4 TIME(4), time_p5 TIME(5), time_p6 TIME(6))")
+        sql("INSERT INTO h2.test.time_v2_new VALUES " +
+          "(1, TIME '10:20:30', TIME '10:20:30.1', TIME '10:20:30.12', TIME '10:20:30.123', " +
+          "TIME '10:20:30.1234', TIME '10:20:30.12345', TIME '10:20:30.123456')")
+
+        val df = sql("SELECT * FROM h2.test.time_v2_new")
+
+        // Verify schema for all precisions
+        (0 to 6).foreach { p =>
+          assert(df.schema(s"time_p$p").dataType === TimeType(p),
+            s"Expected TimeType($p) for time_p$p")
+        }
+
+        val row = df.collect()(0)
+
+        // Verify data for all precisions
+        val expectedTimes = Seq(
+          java.time.LocalTime.of(10, 20, 30, 0),
+          java.time.LocalTime.of(10, 20, 30, 100000000),
+          java.time.LocalTime.of(10, 20, 30, 120000000),
+          java.time.LocalTime.of(10, 20, 30, 123000000),
+          java.time.LocalTime.of(10, 20, 30, 123400000),
+          java.time.LocalTime.of(10, 20, 30, 123450000),
+          java.time.LocalTime.of(10, 20, 30, 123456000)
+        )
+
+        expectedTimes.zipWithIndex.foreach { case (expectedTime, precision) =>
+          assert(row.getAs[java.time.LocalTime](s"time_p$precision") === expectedTime,
+            s"Mismatch at precision $precision")
+        }
+      }
+    }
+  }
+
+  test("V2 TIME type write and read round-trip (TIME(0-6))") {
+    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "false") {
+      withTable("h2.test.time_v2_roundtrip") {
+        // Test all precisions 0-6
+        val data = Seq(
+          (1,
+            java.time.LocalTime.of(8, 0, 0, 0),          // p0: seconds
+            java.time.LocalTime.of(8, 0, 0, 100000000),  // p1: deciseconds
+            java.time.LocalTime.of(8, 0, 0, 120000000),  // p2: centiseconds
+            java.time.LocalTime.of(8, 0, 0, 123000000),  // p3: milliseconds
+            java.time.LocalTime.of(8, 0, 0, 123400000),  // p4: 0.1 milliseconds
+            java.time.LocalTime.of(8, 0, 0, 123450000),  // p5: 0.01 milliseconds
+            java.time.LocalTime.of(8, 0, 0, 123456000)), // p6: microseconds
+          (2,
+            java.time.LocalTime.of(16, 30, 15, 0),
+            java.time.LocalTime.of(16, 30, 15, 900000000),
+            java.time.LocalTime.of(16, 30, 15, 980000000),
+            java.time.LocalTime.of(16, 30, 15, 987000000),
+            java.time.LocalTime.of(16, 30, 15, 987600000),
+            java.time.LocalTime.of(16, 30, 15, 987650000),
+            java.time.LocalTime.of(16, 30, 15, 987654000)),
+          (3, null, null, null, null, null, null, null)
+        ).toDF("id", "time_p0", "time_p1", "time_p2", "time_p3", "time_p4", "time_p5", "time_p6")
+          .select($"id",
+            $"time_p0".cast(TimeType(0)),
+            $"time_p1".cast(TimeType(1)),
+            $"time_p2".cast(TimeType(2)),
+            $"time_p3".cast(TimeType(3)),
+            $"time_p4".cast(TimeType(4)),
+            $"time_p5".cast(TimeType(5)),
+            $"time_p6".cast(TimeType(6)))
+
+        data.writeTo("h2.test.time_v2_roundtrip").create()
+
+        val readDf = sql("SELECT * FROM h2.test.time_v2_roundtrip ORDER BY id")
+
+        // Verify schema for all precisions
+        (0 to 6).foreach { p =>
+          assert(readDf.schema(s"time_p$p").dataType === TimeType(p),
+            s"Expected TimeType($p) for time_p$p")
+        }
+
+        val rows = readDf.collect()
+
+        // Verify row 1 and row 2 (all precisions)
+        val expectedRoundTripTimes = Seq(
+          Seq(
+            java.time.LocalTime.of(8, 0, 0, 0),
+            java.time.LocalTime.of(8, 0, 0, 100000000),
+            java.time.LocalTime.of(8, 0, 0, 120000000),
+            java.time.LocalTime.of(8, 0, 0, 123000000),
+            java.time.LocalTime.of(8, 0, 0, 123400000),
+            java.time.LocalTime.of(8, 0, 0, 123450000),
+            java.time.LocalTime.of(8, 0, 0, 123456000)
+          ),
+          Seq(
+            java.time.LocalTime.of(16, 30, 15, 0),
+            java.time.LocalTime.of(16, 30, 15, 900000000),
+            java.time.LocalTime.of(16, 30, 15, 980000000),
+            java.time.LocalTime.of(16, 30, 15, 987000000),
+            java.time.LocalTime.of(16, 30, 15, 987600000),
+            java.time.LocalTime.of(16, 30, 15, 987650000),
+            java.time.LocalTime.of(16, 30, 15, 987654000)
+          )
+        )
+
+        expectedRoundTripTimes.zipWithIndex.foreach { case (rowTimes, rowIdx) =>
+          rowTimes.zipWithIndex.foreach { case (expectedTime, precision) =>
+            val colName = s"time_p$precision"
+            assert(rows(rowIdx).getAs[java.time.LocalTime](colName) === expectedTime,
+              s"Row $rowIdx, column $colName")
+          }
+        }
+
+        // Verify nulls (row 3)
+        (1 to 7).foreach { colIdx => assert(rows(2).isNullAt(colIdx)) }
+      }
+    }
+  }
+
+  test("V2 TIME type filter pushdown") {
+    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "false") {
+      withTable("h2.test.time_v2_filter") {
+        sql("CREATE TABLE h2.test.time_v2_filter (id INT, shift_time TIME(6))")
+        sql("INSERT INTO h2.test.time_v2_filter VALUES " +
+          "(1, TIME '06:00:00'), (2, TIME '12:00:00'), " +
+          "(3, TIME '18:00:00'), (4, TIME '23:00:00'), (5, NULL)")
+
+        // Test filters
+        val df1 = sql("SELECT * FROM h2.test.time_v2_filter WHERE shift_time < TIME '12:00:00'")
+        assert(df1.count() === 1)
+
+        val df2 = sql("SELECT * FROM h2.test.time_v2_filter WHERE shift_time >= TIME '18:00:00'")
+        assert(df2.count() === 2)
+
+        val df3 = sql("SELECT * FROM h2.test.time_v2_filter WHERE shift_time IS NULL")
+        assert(df3.count() === 1)
+      }
+    }
+  }
+
+  test("V2 TIME type with NULL and boundary values") {
+    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "false") {
+      withTable("h2.test.time_v2_boundary") {
+        sql("CREATE TABLE h2.test.time_v2_boundary " +
+          "(id INT, midnight TIME(6), noon TIME(6), end_day TIME(6))")
+        sql("INSERT INTO h2.test.time_v2_boundary VALUES " +
+          "(1, TIME '00:00:00.000000', TIME '12:00:00', TIME '23:59:59.999999'), " +
+          "(2, NULL, NULL, NULL)")
+
+        val df = sql("SELECT * FROM h2.test.time_v2_boundary ORDER BY id")
+        val rows = df.collect()
+
+        // Row 1: boundary values
+        assert(rows(0).getAs[java.time.LocalTime]("midnight") ===
+          java.time.LocalTime.of(0, 0, 0))
+        assert(rows(0).getAs[java.time.LocalTime]("noon") ===
+          java.time.LocalTime.of(12, 0, 0))
+        assert(rows(0).getAs[java.time.LocalTime]("end_day") ===
+          java.time.LocalTime.of(23, 59, 59, 999999000))
+
+        // Row 2: all NULL
+        assert(rows(1).isNullAt(1) && rows(1).isNullAt(2) && rows(1).isNullAt(3))
+      }
+    }
   }
 }

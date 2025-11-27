@@ -117,7 +117,31 @@ private case class DB2Dialect() extends JdbcDialect with SQLConfHelper with NoLe
       Option(JdbcType("CHAR(1)", java.sql.Types.CHAR))
     case BooleanType => Option(JdbcType("BOOLEAN", java.sql.Types.BOOLEAN))
     case ShortType | ByteType => Some(JdbcType("SMALLINT", java.sql.Types.SMALLINT))
+    case _: TimeType =>
+      if (conf.legacyJdbcTimeAsTimestamp) {
+        // Legacy mode: treat TimeType as TIMESTAMP
+        Some(JdbcType("TIMESTAMP", java.sql.Types.TIMESTAMP))
+      } else {
+        Some(JdbcType("TIME", java.sql.Types.TIME))
+      }
     case _ => None
+  }
+
+  override def readTimeValue(rs: java.sql.ResultSet, pos: Int): java.time.LocalTime = {
+    // DB2 JDBC driver doesn't support getObject(pos, classOf[LocalTime])
+    // Must use getTime() and convert to LocalTime
+    val sqlTime = rs.getTime(pos)
+    if (sqlTime == null) null else sqlTime.toLocalTime
+  }
+
+  override def writeTimeValue(
+      stmt: java.sql.PreparedStatement,
+      pos: Int,
+      time: java.time.LocalTime): Unit = {
+    // DB2 JDBC driver doesn't support java.time.LocalTime directly
+    // Must convert to java.sql.Time for compatibility
+    val sqlTime = java.sql.Time.valueOf(time)
+    stmt.setTime(pos, sqlTime)
   }
 
   override def isCascadingTruncateTable(): Option[Boolean] = Some(false)

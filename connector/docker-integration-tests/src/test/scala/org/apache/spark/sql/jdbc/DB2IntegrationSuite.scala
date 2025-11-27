@@ -19,13 +19,17 @@ package org.apache.spark.sql.jdbc
 
 import java.math.BigDecimal
 import java.sql.{Connection, Date, Timestamp}
+import java.time.LocalTime
 import java.util.Properties
+
+import scala.jdk.CollectionConverters._
+import scala.util.Using
 
 import org.apache.spark.sql.{Row, SaveMode}
 import org.apache.spark.sql.catalyst.util.CharVarcharUtils
 import org.apache.spark.sql.catalyst.util.DateTimeTestUtils._
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{ByteType, ShortType, StructType}
+import org.apache.spark.sql.types.{ByteType, IntegerType, ShortType, StructField, StructType, TimestampNTZType, TimestampType, TimeType}
 import org.apache.spark.tags.DockerTest
 
 /**
@@ -279,5 +283,94 @@ class DB2IntegrationSuite extends SharedJDBCIntegrationSuite {
       "ABC".getBytes,
       "ABC".getBytes ++ Array.fill(7)(0),
       "ABC".getBytes))
+  }
+
+  test("TIME type with legacy flag (true=legacy, false=new behavior)") {
+    // DB2 TIME doesn't support fractional seconds - use time value without microseconds
+    val testTime = "15:45:30"
+
+    Seq(false, true).foreach { legacyFlag =>
+      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
+        val tableName = if (legacyFlag) "test_time_legacy" else "test_time_new"
+
+        withTable(tableName) {
+          Using.resource(getConnection()) { conn =>
+            Using.resource(conn.createStatement()) { stmt =>
+              // DB2 doesn't support TIME(precision), only plain TIME
+              stmt.executeUpdate(s"CREATE TABLE $tableName (id INT, time_col TIME)")
+              stmt.executeUpdate(s"INSERT INTO $tableName VALUES (1, TIME '$testTime')")
+            }
+          }
+
+          val df = spark.read.jdbc(jdbcUrl, tableName, new Properties())
+
+          if (legacyFlag) {
+            // Legacy: reads as TimestampType
+            assert(df.schema("TIME_COL").dataType.isInstanceOf[TimestampType] ||
+              df.schema("TIME_COL").dataType.isInstanceOf[TimestampNTZType])
+            val row = df.collect()(0)
+            val ts = row.getAs[java.sql.Timestamp]("TIME_COL")
+            assert(ts.toString.startsWith(s"1970-01-01 $testTime"))
+          } else {
+            // New: reads as TimeType
+            assert(df.schema("TIME_COL").dataType.isInstanceOf[TimeType])
+            val row = df.collect()(0)
+            val actualTime = row.getAs[LocalTime]("TIME_COL")
+            assert(actualTime === LocalTime.parse(testTime))
+          }
+        }
+      }
+    }
+  }
+
+  test("TIME type write and read round-trip") {
+    import java.time.LocalTime
+
+    Seq(false, true).foreach { legacyFlag =>
+      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
+        val tableName = s"test_time_roundtrip_${if (legacyFlag) "legacy" else "new"}"
+
+        withTable(tableName) {
+          // Write TimeType DataFrame
+          // Note: DB2 doesn't support TIME(precision), so we use default precision
+          val writeData = Seq(
+            Row(1, LocalTime.of(8, 0, 0)),
+            Row(2, LocalTime.of(14, 30, 15)),
+            Row(3, null)
+          )
+          val writeSchema = StructType(Seq(
+            StructField("id", IntegerType, nullable = false),
+            StructField("time_col", TimeType(0), nullable = true)
+          ))
+
+          val writeDf = spark.createDataFrame(writeData.asJava, writeSchema)
+          writeDf.write.mode("overwrite")
+            .jdbc(jdbcUrl, tableName, new Properties())
+
+          // Read back and verify
+          val readDf = spark.read.jdbc(jdbcUrl, tableName, new Properties())
+          val rows = readDf.orderBy("id").collect()
+
+          if (legacyFlag) {
+            // Legacy mode: reads as TimestampType with epoch date
+            assert(readDf.schema("time_col").dataType.isInstanceOf[TimestampType] ||
+              readDf.schema("time_col").dataType.isInstanceOf[TimestampNTZType])
+
+            val ts0 = rows(0).getAs[java.sql.Timestamp]("time_col")
+            val ts1 = rows(1).getAs[java.sql.Timestamp]("time_col")
+            assert(ts0.toString.startsWith("1970-01-01 08:00:00"))
+            assert(ts1.toString.startsWith("1970-01-01 14:30:15"))
+            assert(rows(2).isNullAt(1))
+          } else {
+            // New mode: reads as TimeType
+            assert(readDf.schema("time_col").dataType.isInstanceOf[TimeType])
+
+            assert(rows(0).getAs[LocalTime]("time_col") === LocalTime.of(8, 0, 0))
+            assert(rows(1).getAs[LocalTime]("time_col") === LocalTime.of(14, 30, 15))
+            assert(rows(2).isNullAt(1))
+          }
+        }
+      }
+    }
   }
 }

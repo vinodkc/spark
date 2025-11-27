@@ -19,15 +19,18 @@ package org.apache.spark.sql.jdbc
 
 import java.math.BigDecimal
 import java.sql.{Connection, Date, Timestamp}
-import java.time.LocalDateTime
+import java.time.{LocalDateTime, LocalTime}
 import java.util.Properties
+
+import scala.jdk.CollectionConverters._
+import scala.util.Using
 
 import org.apache.spark.SparkSQLException
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.util.DateTimeTestUtils._
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{BinaryType, DecimalType}
+import org.apache.spark.sql.types.{BinaryType, DecimalType, IntegerType, StructField, StructType, TimestampNTZType, TimestampType, TimeType}
 import org.apache.spark.tags.DockerTest
 
 /**
@@ -257,6 +260,189 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
               } else {
                 Timestamp.valueOf("1970-01-01 13:31:24")
               }))
+          }
+        }
+      }
+    }
+  }
+
+  test("TIME type with legacy flag (MS SQL Server TIME(0,3,6))") {
+    Seq(false, true).foreach { legacyFlag =>
+      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
+        val tableName = if (legacyFlag) "test_time_legacy" else "test_time_new"
+
+        withTable(tableName) {
+          Using.resource(getConnection()) { conn =>
+            Using.resource(conn.createStatement()) { stmt =>
+              if (legacyFlag) {
+                // Legacy mode: test with single TIME column (backward compatibility)
+                stmt.executeUpdate(
+                  s"""CREATE TABLE $tableName (
+                     |  id INT,
+                     |  time_col TIME(3)
+                     |)""".stripMargin)
+                stmt.executeUpdate(
+                  s"""INSERT INTO $tableName VALUES
+                     |(1, '13:45:22.400'),
+                     |(2, '06:15:47.700')
+                     |""".stripMargin)
+              } else {
+                // New mode: test with multiple TIME columns at different precisions
+                stmt.executeUpdate(
+                  s"""CREATE TABLE $tableName (
+                     |  id INT,
+                     |  time_p0 TIME(0),
+                     |  time_p3 TIME(3),
+                     |  time_p6 TIME(6)
+                     |)""".stripMargin)
+                stmt.executeUpdate(
+                  s"""INSERT INTO $tableName VALUES
+                     |(1, '09:37:48', '13:45:22.400', '17:12:33.400000'),
+                     |(2, '14:25:37', '06:15:47.700', '21:55:18.700000')
+                     |""".stripMargin)
+              }
+            }
+          }
+
+          val df = spark.read.jdbc(jdbcUrl, tableName, new Properties())
+
+          if (legacyFlag) {
+            // Legacy: reads single TIME column as TimestampType
+            assert(df.schema("time_col").dataType.isInstanceOf[TimestampType] ||
+              df.schema("time_col").dataType.isInstanceOf[TimestampNTZType],
+              s"Expected TimestampType for time_col with flag=$legacyFlag")
+
+            val rows = df.orderBy("id").collect()
+            val ts0 = rows(0).getAs[java.sql.Timestamp]("time_col")
+            assert(ts0.toString.startsWith("1970-01-01 13:45:22"),
+              s"Expected timestamp at epoch date but got ${ts0.toString}")
+          } else {
+            // New: reads as TimeType with correct precision
+            val precisions = Seq(0, 3, 6)
+            precisions.foreach { p =>
+              assert(df.schema(s"time_p$p").dataType === TimeType(p),
+                s"Expected TimeType($p) for time_p$p")
+            }
+
+            val rows = df.orderBy("id").collect()
+
+            val expectedTimes = Seq(
+              Seq(
+                LocalTime.of(9, 37, 48),
+                LocalTime.of(13, 45, 22, 400000000),
+                LocalTime.of(17, 12, 33, 400000000)
+              ),
+              Seq(
+                LocalTime.of(14, 25, 37),
+                LocalTime.of(6, 15, 47, 700000000),
+                LocalTime.of(21, 55, 18, 700000000)
+              )
+            )
+
+            expectedTimes.zipWithIndex.foreach { case (rowTimes, rowIdx) =>
+              rowTimes.zipWithIndex.foreach { case (expectedTime, timeIdx) =>
+                val precision = precisions(timeIdx)
+                val colName = s"time_p$precision"
+                assert(rows(rowIdx).getAs[LocalTime](colName) === expectedTime,
+                  s"Row $rowIdx, column $colName")
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  test("TIME type write and read round-trip (MS SQL Server TIME(0,3,6))") {
+    Seq(false, true).foreach { legacyFlag =>
+      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
+        val tableName = s"test_time_roundtrip_${if (legacyFlag) "legacy" else "new"}"
+
+        withTable(tableName) {
+          if (legacyFlag) {
+            // Legacy mode: write/read single TIME column (backward compatibility)
+            val writeData = Seq(
+              Row(1, LocalTime.of(11, 47, 19, 200000000)),
+              Row(2, LocalTime.of(5, 38, 54, 300000000)),
+              Row(3, null)
+            )
+            val writeSchema = StructType(Seq(
+              StructField("id", IntegerType, nullable = false),
+              StructField("time_col", TimeType(3), nullable = true)
+            ))
+
+            val writeDf = spark.createDataFrame(writeData.asJava, writeSchema)
+            writeDf.write.mode("overwrite").jdbc(jdbcUrl, tableName, new Properties())
+
+            // Read back and verify
+            val readDf = spark.read.jdbc(jdbcUrl, tableName, new Properties())
+            val rows = readDf.orderBy("id").collect()
+
+            // Legacy mode: reads as TimestampType with epoch date
+            assert(readDf.schema("time_col").dataType.isInstanceOf[TimestampType] ||
+              readDf.schema("time_col").dataType.isInstanceOf[TimestampNTZType])
+
+            val ts0 = rows(0).getAs[java.sql.Timestamp]("time_col")
+            assert(ts0.toString.startsWith("1970-01-01 11:47:19"))
+            assert(rows(2).isNullAt(1))
+          } else {
+            // New mode: write/read multiple TIME columns at different precisions
+            val writeData = Seq(
+              Row(1,
+                LocalTime.of(7, 23, 41),
+                LocalTime.of(11, 47, 19, 200000000),
+                LocalTime.of(16, 52, 36, 200000000)),
+              Row(2,
+                LocalTime.of(19, 14, 28),
+                LocalTime.of(5, 38, 54, 300000000),
+                LocalTime.of(22, 9, 17, 300000000)),
+              Row(3, null, null, null)
+            )
+            val writeSchema = StructType(Seq(
+              StructField("id", IntegerType, nullable = false),
+              StructField("time_p0", TimeType(0), nullable = true),
+              StructField("time_p3", TimeType(3), nullable = true),
+              StructField("time_p6", TimeType(6), nullable = true)
+            ))
+
+            val writeDf = spark.createDataFrame(writeData.asJava, writeSchema)
+            writeDf.write.mode("overwrite").jdbc(jdbcUrl, tableName, new Properties())
+
+            // Read back and verify
+            val readDf = spark.read.jdbc(jdbcUrl, tableName, new Properties())
+            val rows = readDf.orderBy("id").collect()
+
+            // New mode: reads as TimeType with correct precisions
+            val precisions = Seq(0, 3, 6)
+            precisions.foreach { p =>
+              assert(readDf.schema(s"time_p$p").dataType === TimeType(p),
+                s"Expected TimeType($p) for time_p$p")
+            }
+
+            val expectedRoundTripTimes = Seq(
+              Seq(
+                LocalTime.of(7, 23, 41),
+                LocalTime.of(11, 47, 19, 200000000),
+                LocalTime.of(16, 52, 36, 200000000)
+              ),
+              Seq(
+                LocalTime.of(19, 14, 28),
+                LocalTime.of(5, 38, 54, 300000000),
+                LocalTime.of(22, 9, 17, 300000000)
+              )
+            )
+
+            expectedRoundTripTimes.zipWithIndex.foreach { case (rowTimes, rowIdx) =>
+              rowTimes.zipWithIndex.foreach { case (expectedTime, timeIdx) =>
+                val precision = precisions(timeIdx)
+                val colName = s"time_p$precision"
+                assert(rows(rowIdx).getAs[LocalTime](colName) === expectedTime,
+                  s"Row $rowIdx, column $colName")
+              }
+            }
+
+            // Verify nulls (row 3)
+            (1 to 3).foreach { colIdx => assert(rows(2).isNullAt(colIdx)) }
           }
         }
       }

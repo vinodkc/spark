@@ -19,10 +19,13 @@ package org.apache.spark.sql.execution.datasources.jdbc
 
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.sql.AnalysisException
+import org.apache.spark.sql.catalyst.SQLConfHelper
 import org.apache.spark.sql.catalyst.parser.ParseException
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.jdbc.JdbcType
 import org.apache.spark.sql.types._
 
-class JdbcUtilsSuite extends SparkFunSuite {
+class JdbcUtilsSuite extends SparkFunSuite with SQLConfHelper {
 
   val tableSchema = StructType(Seq(
     StructField("C1", StringType, false), StructField("C2", IntegerType, false)))
@@ -68,5 +71,23 @@ class JdbcUtilsSuite extends SparkFunSuite {
       },
       condition = "PARSE_SYNTAX_ERROR",
       parameters = Map("error" -> "'.'", "hint" -> ""))
+  }
+
+  test("getCommonJDBCType for TimeType (legacy and new behavior)") {
+    Seq(false, true).foreach { legacyFlag =>
+      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
+        (0 to 6).foreach { precision =>
+          val expected = if (legacyFlag) {
+            // Legacy mode: TimeType maps to TIMESTAMP
+            Some(JdbcType("TIMESTAMP", java.sql.Types.TIMESTAMP))
+          } else {
+            // New mode: TimeType maps to TIME with precision
+            Some(JdbcType(s"TIME($precision)", java.sql.Types.TIME))
+          }
+          assert(JdbcUtils.getCommonJDBCType(TimeType(precision)) === expected,
+            s"TimeType($precision) with legacyFlag=$legacyFlag")
+        }
+      }
+    }
   }
 }

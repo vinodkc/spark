@@ -166,6 +166,46 @@ abstract class JdbcDialect extends Serializable with Logging {
   def convertJavaDateToDate(d: Date): Date = d
 
   /**
+   * Reads a TIME value from ResultSet. This method allows dialects to optimize
+   * TIME value retrieval based on their JDBC driver capabilities.
+   *
+   * The default implementation uses direct object retrieval with explicit LocalTime class,
+   * which preserves precision up to microseconds (TimeType supports precision 0-6).
+   * Specifying the target class ensures the driver returns the value without truncation.
+   *
+   * @param rs the ResultSet to read from
+   * @param pos the 1-based position of the column
+   * @return LocalTime instance, or null if the value is SQL NULL
+   */
+  @Since("4.2.0")
+  def readTimeValue(rs: java.sql.ResultSet, pos: Int): java.time.LocalTime = {
+    rs.getObject(pos, classOf[java.time.LocalTime])
+  }
+
+  /**
+   * Writes a TIME value to PreparedStatement. This method allows dialects to handle
+   * TIME value writing based on their JDBC driver requirements.
+   *
+   * The default implementation uses setObject with explicit TIME type and LocalTime,
+   * which works for most modern JDBC drivers (PostgreSQL, MySQL, H2, etc.).
+   * Dialects can override this if their driver requires a different approach
+   * (e.g., java.sql.Time for Derby/DB2, or TIMESTAMP for Oracle which lacks TIME type).
+   *
+   * @param stmt the PreparedStatement to write to
+   * @param pos the 1-based position of the parameter
+   * @param time the LocalTime value to write
+   */
+  @Since("4.2.0")
+  def writeTimeValue(
+      stmt: java.sql.PreparedStatement,
+      pos: Int,
+      time: java.time.LocalTime): Unit = {
+    // Default: use setObject with LocalTime and explicit TIME type
+    // This works for PostgreSQL, MySQL, H2, and most modern JDBC drivers
+    stmt.setObject(pos, time, java.sql.Types.TIME)
+  }
+
+  /**
    * Converts an year-month interval string to an int value `months`.
    *
    * @param yearmonthStr the year-month interval string
@@ -373,6 +413,7 @@ abstract class JdbcDialect extends Serializable with Logging {
       s"'${timestampFormatter.format(timestampValue)}'"
     case dateValue: Date => "'" + dateValue + "'"
     case dateValue: LocalDate => s"'${DateFormatter().format(dateValue)}'"
+    case timeValue: java.time.LocalTime => s"TIME '${timeValue.toString}'"
     case arrayValue: Array[Any] => arrayValue.map(compileValue).mkString(", ")
     case binaryValue: Array[Byte] => binaryValue.map("%02X".format(_)).mkString("X'", "", "'")
     case _ => value

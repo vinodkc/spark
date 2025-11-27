@@ -22,6 +22,9 @@ import java.sql.{Connection, Date, Timestamp}
 import java.time.{Duration, Period}
 import java.util.{Properties, TimeZone}
 
+import scala.jdk.CollectionConverters._
+import scala.util.Using
+
 import org.apache.spark.sql.{DataFrame, Row, SaveMode}
 import org.apache.spark.sql.catalyst.util.CharVarcharUtils
 import org.apache.spark.sql.catalyst.util.DateTimeTestUtils._
@@ -612,6 +615,83 @@ class OracleIntegrationSuite extends SharedJDBCIntegrationSuite
     Seq(2, 3).foreach { i =>
       assert(schema(i).dataType === StringType)
       assert(!schema(i).metadata.contains(CharVarcharUtils.CHAR_VARCHAR_TYPE_STRING_METADATA_KEY))
+    }
+  }
+
+  test("TimeType writes as TIMESTAMP in Oracle (flag independent, no native TIME support)") {
+    // Oracle doesn't have TIME data type, so TimeType always maps to TIMESTAMP
+    // regardless of the legacy flag setting
+    import java.time.LocalTime
+    val testTime = LocalTime.of(9, 30, 45, 123456000)
+
+    Seq(false, true).foreach { legacyFlag =>
+      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
+        val tableName = if (legacyFlag) "test_time_legacy" else "test_time_new"
+
+        withTable(tableName) {
+          // Write TimeType DataFrame to Oracle - same data for both modes
+          val writeData = if (legacyFlag) {
+            Seq(Row(BigDecimal.valueOf(1), testTime))
+          } else {
+            Seq(
+              Row(BigDecimal.valueOf(1), testTime),
+              Row(BigDecimal.valueOf(2), LocalTime.of(14, 15, 30, 987654000)),
+              Row(BigDecimal.valueOf(3), null)
+            )
+          }
+
+          val writeSchema = StructType(Seq(
+            StructField("id", DecimalType(10, 0), nullable = false),
+            StructField("time_col", TimeType(0), nullable = true)
+          ))
+
+          spark.createDataFrame(writeData.asJava, writeSchema)
+            .write.mode("overwrite")
+            .jdbc(jdbcUrl, tableName, new Properties())
+
+          // Verify table was created with TIMESTAMP column (not TIME)
+          Using.resource(getConnection()) { conn =>
+            val metaData = conn.getMetaData
+            val upperTableName = tableName.toUpperCase(java.util.Locale.ROOT)
+            val schema = metaData.getUserName.toUpperCase(java.util.Locale.ROOT)
+            val columns = metaData.getColumns(null, schema, upperTableName, "%")
+
+            val columnInfo = Iterator.continually(columns)
+              .takeWhile(_.next())
+              .map { rs =>
+                (rs.getString("COLUMN_NAME"), rs.getString("TYPE_NAME"))
+              }
+              .find { case (colName, _) => colName.equalsIgnoreCase("time_col") }
+
+            assert(columnInfo.isDefined,
+              s"Column time_col not found in table $schema.$upperTableName")
+
+            val columnTypeName = columnInfo.get._2
+            assert(columnTypeName.toUpperCase(java.util.Locale.ROOT).contains("TIMESTAMP"),
+              s"Expected TIMESTAMP type but got $columnTypeName with flag=$legacyFlag. " +
+              "Oracle doesn't support TIME type.")
+          }
+
+          val readDf = spark.read.jdbc(jdbcUrl, tableName, new Properties())
+
+          // Schema should always be TimestampType (Oracle returns TIMESTAMP, not TIME)
+          val actualType = readDf.schema("time_col").dataType
+          assert(actualType.isInstanceOf[TimestampType],
+            s"Expected TimestampType with flag=$legacyFlag but got $actualType")
+
+          // Verify values (stored as timestamps with epoch date)
+          val rows = readDf.orderBy("id").collect()
+          val ts = rows(0).getAs[java.sql.Timestamp]("time_col")
+          assert(ts.toString.startsWith("1970-01-01 09:30:45"),
+            s"Expected timestamp starting with '1970-01-01 09:30:45' but got ${ts.toString}")
+
+          if (!legacyFlag) {
+            val ts2 = rows(1).getAs[java.sql.Timestamp]("time_col")
+            assert(ts2.toString.startsWith("1970-01-01 14:15:30"))
+            assert(rows(2).isNullAt(1))
+          }
+        }
+      }
     }
   }
 }
