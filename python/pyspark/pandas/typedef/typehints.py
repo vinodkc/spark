@@ -283,6 +283,7 @@ def spark_type_to_pandas_dtype(
         spark_type,
         (
             types.DateType,
+            types.TimeType,
             types.NullType,
             types.ArrayType,
             types.MapType,

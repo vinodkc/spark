@@ -30,6 +30,7 @@ from pyspark.pandas.data_type_ops.datetime_ops import DatetimeOps, DatetimeNTZOp
 from pyspark.pandas.data_type_ops.null_ops import NullOps
 from pyspark.pandas.data_type_ops.num_ops import IntegralOps, FractionalOps, DecimalOps
 from pyspark.pandas.data_type_ops.string_ops import StringOps
+from pyspark.pandas.data_type_ops.time_ops import TimeOps
 from pyspark.pandas.data_type_ops.timedelta_ops import TimedeltaOps
 from pyspark.pandas.data_type_ops.udt_ops import UDTOps
 from pyspark.sql.types import (
@@ -46,6 +47,7 @@ from pyspark.sql.types import (
     NullType,
     StringType,
     StructType,
+    TimeType,
     TimestampType,
     TimestampNTZType,
     UserDefinedType,
@@ -66,6 +68,7 @@ class BaseTestsMixin:
             (_mock_dtype, TimestampType(), DatetimeOps),
             (_mock_dtype, TimestampNTZType(), DatetimeNTZOps),
             (_mock_dtype, DateType(), DateOps),
+            (_mock_dtype, TimeType(), TimeOps),
             (_mock_dtype, DayTimeIntervalType(), TimedeltaOps),
             (_mock_dtype, BinaryType(), BinaryOps),
             (_mock_dtype, ArrayType(StringType()), ArrayOps),
