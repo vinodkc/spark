@@ -6895,8 +6895,7 @@ object functions {
    * @param time
    *   A column of time values to be formatted.
    * @param format
-   *   A time format string. See
-   *   [[https://spark.apache.org/docs/latest/sql-ref-datetime-pattern.html Datetime Patterns]]
+   *   A time format string.
    *   for valid patterns.
    * @return
    *   String representation of the time in the specified format.
