@@ -6895,8 +6895,7 @@ object functions {
    * @param time
    *   A column of time values to be formatted.
    * @param format
-   *   A time format string.
-   *   for valid patterns.
+   *   A time format string. for valid patterns.
    * @return
    *   String representation of the time in the specified format.
    * @group datetime_funcs
