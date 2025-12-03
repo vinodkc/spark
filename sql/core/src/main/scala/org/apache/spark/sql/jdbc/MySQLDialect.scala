@@ -191,6 +191,21 @@ private case class MySQLDialect() extends JdbcDialect with SQLConfHelper with No
         // scalastyle:on line.size.limit
         Some(getTimestampType(md.build()))
       case Types.TIMESTAMP if !conf.legacyMySqlTimestampNTZMappingEnabled => Some(TimestampType)
+      case Types.TIME =>
+        if (conf.legacyJdbcTimeAsTimestamp) {
+          Some(TimestampType)
+        } else {
+          // MySQL JDBC driver encodes TIME fractional seconds precision in the precision field:
+          // TIME(0) -> precision=10, TIME(1) -> precision=12, ..., TIME(6) -> precision=17
+          // Formula: fractional seconds precision = precision - 11 (when precision > 10)
+          val timePrecision = if (size > 10) {
+            val fsp = size - 11
+            if (fsp >= 0 && fsp <= 6) fsp else 6
+          } else {
+            0 // TIME without fractional seconds
+          }
+          Some(TimeType(timePrecision))
+        }
       case _ => None
     }
   }

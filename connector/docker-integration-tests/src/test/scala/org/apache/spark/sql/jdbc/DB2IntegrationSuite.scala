@@ -313,7 +313,9 @@ class DB2IntegrationSuite extends SharedJDBCIntegrationSuite {
             assert(ts.toString.startsWith(s"1970-01-01 $testTime"))
           } else {
             // New: reads as TimeType
-            assert(df.schema("TIME_COL").dataType.isInstanceOf[TimeType])
+            // DB2 TIME doesn't support fractional seconds, so precision should be 0
+            assert(df.schema("TIME_COL").dataType === TimeType(0),
+              "DB2 TIME has no fractional seconds, expected TimeType(0)")
             val row = df.collect()(0)
             val actualTime = row.getAs[LocalTime]("TIME_COL")
             assert(actualTime === LocalTime.parse(testTime))
@@ -363,7 +365,9 @@ class DB2IntegrationSuite extends SharedJDBCIntegrationSuite {
             assert(rows(2).isNullAt(1))
           } else {
             // New mode: reads as TimeType
-            assert(readDf.schema("time_col").dataType.isInstanceOf[TimeType])
+            // DB2 TIME doesn't support fractional seconds, so precision should be 0
+            assert(readDf.schema("time_col").dataType === TimeType(0),
+              "DB2 TIME has no fractional seconds, expected TimeType(0)")
 
             assert(rows(0).getAs[LocalTime]("time_col") === LocalTime.of(8, 0, 0))
             assert(rows(1).getAs[LocalTime]("time_col") === LocalTime.of(14, 30, 15))
