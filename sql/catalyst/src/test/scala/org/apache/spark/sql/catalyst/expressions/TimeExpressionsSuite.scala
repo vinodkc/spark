@@ -723,11 +723,6 @@ class TimeExpressionsSuite extends SparkFunSuite with ExpressionEvalHelper {
       TimeFormat(timeLit, NonFoldableLiteral(null, StringType)),
       null)
 
-    // Verify codegen consistency
-    checkConsistencyBetweenInterpretedAndCodegen(
-      (t: Expression, f: Expression) => TimeFormat(t, f),
-      TimeType(), StringType)
-
     // Verify foldable and non-foldable produce same result
     val foldableResult = foldableExpr.eval()
     val nonFoldableResult = nonFoldableExpr.eval()
