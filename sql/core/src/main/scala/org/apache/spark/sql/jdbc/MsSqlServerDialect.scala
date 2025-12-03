@@ -159,14 +159,10 @@ private case class MsSqlServerDialect() extends JdbcDialect with NoLegacyJDBCErr
       case java.sql.Types.REAL if !SQLConf.get.legacyMsSqlServerNumericMappingEnabled =>
         Some(FloatType)
       case GEOMETRY | GEOGRAPHY => Some(BinaryType)
-      case java.sql.Types.TIME =>
-        if (SQLConf.get.legacyJdbcTimeAsTimestamp) {
-          Some(getTimestampType(md.build()))
-        } else {
-          val scale = md.build().getLong("scale").toInt
-          val timePrecision = if (scale >= 0 && scale <= 6) scale else 6
-          Some(TimeType(timePrecision))
-        }
+      case java.sql.Types.TIME if !SQLConf.get.legacyJdbcTimeAsTimestamp =>
+        val scale = md.build().getLong("scale").toInt
+        val timePrecision = if (scale >= 0 && scale <= 6) scale else 6
+        Some(TimeType(timePrecision))
       case _ => None
     }
   }

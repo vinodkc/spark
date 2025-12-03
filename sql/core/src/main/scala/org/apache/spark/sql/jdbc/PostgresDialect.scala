@@ -124,16 +124,11 @@ private case class PostgresDialect()
       Some(StringType)
     case "bytea" => Some(BinaryType)
     case "timestamptz" | "timetz" => Some(TimestampType)
-    case "timestamp" => Some(getTimestampType(md.build()))
-    case "time" =>
-      if (conf.legacyJdbcTimeAsTimestamp) {
-        Some(getTimestampType(md.build()))
-      } else {
-        // Extract precision for TimeType
-        val scale = md.build().getLong("scale").toInt
-        val timePrecision = if (scale >= 0 && scale <= 6) scale else 6
-        Some(TimeType(timePrecision))
-      }
+    case "time" if !conf.legacyJdbcTimeAsTimestamp =>
+      val scale = md.build().getLong("scale").toInt
+      val timePrecision = if (scale >= 0 && scale <= 6) scale else 6
+      Some(TimeType(timePrecision))
+    case "timestamp" | "time" => Some(getTimestampType(md.build()))
     case "date" => Some(DateType)
     case "numeric" | "decimal" if precision > 0 =>
       val scale = md.build().getLong("scale").toInt
