@@ -376,7 +376,7 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
     }
   }
 
-  test("TIME type write and read round-trip (MS SQL Server TIME(0,3,6))") {
+  test("TIME type write and read round-trip with SQL column type verification") {
     Seq(false, true).foreach { legacyFlag =>
       withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
         val tableName = s"test_time_roundtrip_${if (legacyFlag) "legacy" else "new"}"
@@ -396,6 +396,22 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
 
             val writeDf = spark.createDataFrame(writeData.asJava, writeSchema)
             writeDf.write.mode("overwrite").jdbc(jdbcUrl, tableName, new Properties())
+
+            // Verify SQL column type: should be DATETIME2 (not TIME) in legacy mode
+            Using.resource(getConnection()) { conn =>
+              Using.resource(conn.createStatement()) { stmt =>
+                val rs = stmt.executeQuery(
+                  s"""SELECT t.name AS data_type, c.scale
+                     |FROM sys.columns c
+                     |JOIN sys.types t ON c.user_type_id = t.user_type_id
+                     |WHERE c.object_id = OBJECT_ID('$tableName')
+                     |AND c.name = 'time_col'""".stripMargin)
+                assert(rs.next())
+                val dataType = rs.getString("data_type")
+                assert(dataType == "datetime2",
+                  s"Expected DATETIME2 for TimeType in legacy mode, got $dataType")
+              }
+            }
 
             // Read back and verify
             val readDf = spark.read.jdbc(jdbcUrl, tableName, new Properties())
@@ -442,6 +458,30 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
 
             val writeDf = spark.createDataFrame(writeData.asJava, writeSchema)
             writeDf.write.mode("overwrite").jdbc(jdbcUrl, tableName, new Properties())
+
+            // Verify SQL column types: should be TIME(precision) in new mode
+            Using.resource(getConnection()) { conn =>
+              Using.resource(conn.createStatement()) { stmt =>
+                val rs = stmt.executeQuery(
+                  s"""SELECT c.name AS column_name, t.name AS data_type, c.scale
+                     |FROM sys.columns c
+                     |JOIN sys.types t ON c.user_type_id = t.user_type_id
+                     |WHERE c.object_id = OBJECT_ID('$tableName')
+                     |AND c.name LIKE 'time_p%'
+                     |ORDER BY c.name""".stripMargin)
+
+                val precisions = Seq(0, 1, 2, 3, 4, 5, 6)
+                precisions.foreach { p =>
+                  assert(rs.next(), s"Expected column time_p$p")
+                  val colName = rs.getString("column_name")
+                  val dataType = rs.getString("data_type")
+                  val scale = rs.getInt("scale")
+                  assert(colName == s"time_p$p", s"Expected time_p$p, got $colName")
+                  assert(dataType == "time", s"Expected TIME for time_p$p, got $dataType")
+                  assert(scale == p, s"Expected scale $p for time_p$p, got $scale")
+                }
+              }
+            }
 
             // Read back and verify
             val readDf = spark.read.jdbc(jdbcUrl, tableName, new Properties())

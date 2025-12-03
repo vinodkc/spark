@@ -176,8 +176,9 @@ private case class MsSqlServerDialect() extends JdbcDialect with NoLegacyJDBCErr
     case TimestampNTZType => Some(JdbcType("DATETIME", java.sql.Types.TIMESTAMP))
     case TimeType(precision) =>
       if (SQLConf.get.legacyJdbcTimeAsTimestamp) {
-        // Legacy mode: map TimeType to DATETIME for backward compatibility
-        Some(JdbcType("DATETIME", java.sql.Types.TIMESTAMP))
+        // Legacy mode: map TimeType to DATETIME2 for backward compatibility
+        // Note: Using DATETIME2 (not DATETIME) to preserve microsecond precision
+        Some(JdbcType("DATETIME2", java.sql.Types.TIMESTAMP))
       } else {
         // New mode: map TimeType to TIME(precision)
         Some(JdbcType(s"TIME($precision)", java.sql.Types.TIME))
