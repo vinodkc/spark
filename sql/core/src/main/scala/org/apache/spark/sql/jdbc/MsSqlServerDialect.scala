@@ -161,7 +161,7 @@ private case class MsSqlServerDialect() extends JdbcDialect with NoLegacyJDBCErr
       case GEOMETRY | GEOGRAPHY => Some(BinaryType)
       case java.sql.Types.TIME =>
         if (SQLConf.get.legacyJdbcTimeAsTimestamp) {
-          Some(TimestampType)
+          Some(getTimestampType(md.build()))
         } else {
           val scale = md.build().getLong("scale").toInt
           val timePrecision = if (scale >= 0 && scale <= 6) scale else 6
