@@ -287,18 +287,24 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
                      |(2, '06:15:47.700')
                      |""".stripMargin)
               } else {
-                // New mode: test with multiple TIME columns at different precisions
+                // New mode: test with TIME columns at ALL precisions (0-6)
                 stmt.executeUpdate(
                   s"""CREATE TABLE $tableName (
                      |  id INT,
                      |  time_p0 TIME(0),
+                     |  time_p1 TIME(1),
+                     |  time_p2 TIME(2),
                      |  time_p3 TIME(3),
+                     |  time_p4 TIME(4),
+                     |  time_p5 TIME(5),
                      |  time_p6 TIME(6)
                      |)""".stripMargin)
                 stmt.executeUpdate(
                   s"""INSERT INTO $tableName VALUES
-                     |(1, '09:37:48', '13:45:22.400', '17:12:33.400000'),
-                     |(2, '14:25:37', '06:15:47.700', '21:55:18.700000')
+                     |(1, '08:30:45', '08:30:45.1', '08:30:45.12', '08:30:45.123',
+                     |    '08:30:45.1234', '08:30:45.12345', '08:30:45.123456'),
+                     |(2, '14:25:37', '14:25:37.2', '14:25:37.23', '14:25:37.234',
+                     |    '14:25:37.2345', '14:25:37.23456', '14:25:37.234567')
                      |""".stripMargin)
               }
             }
@@ -317,8 +323,8 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
             assert(ts0.toString.startsWith("1970-01-01 13:45:22"),
               s"Expected timestamp at epoch date but got ${ts0.toString}")
           } else {
-            // New: reads as TimeType with correct precision
-            val precisions = Seq(0, 3, 6)
+            // New: reads as TimeType with correct precision for ALL precisions (0-6)
+            val precisions = Seq(0, 1, 2, 3, 4, 5, 6)
             precisions.foreach { p =>
               assert(df.schema(s"time_p$p").dataType === TimeType(p),
                 s"Expected TimeType($p) for time_p$p")
@@ -328,14 +334,22 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
 
             val expectedTimes = Seq(
               Seq(
-                LocalTime.of(9, 37, 48),
-                LocalTime.of(13, 45, 22, 400000000),
-                LocalTime.of(17, 12, 33, 400000000)
+                LocalTime.of(8, 30, 45, 0),          // p0: 08:30:45
+                LocalTime.of(8, 30, 45, 100000000),  // p1: 08:30:45.1
+                LocalTime.of(8, 30, 45, 120000000),  // p2: 08:30:45.12
+                LocalTime.of(8, 30, 45, 123000000),  // p3: 08:30:45.123
+                LocalTime.of(8, 30, 45, 123400000),  // p4: 08:30:45.1234
+                LocalTime.of(8, 30, 45, 123450000),  // p5: 08:30:45.12345
+                LocalTime.of(8, 30, 45, 123456000)   // p6: 08:30:45.123456
               ),
               Seq(
-                LocalTime.of(14, 25, 37),
-                LocalTime.of(6, 15, 47, 700000000),
-                LocalTime.of(21, 55, 18, 700000000)
+                LocalTime.of(14, 25, 37, 0),         // p0: 14:25:37
+                LocalTime.of(14, 25, 37, 200000000), // p1: 14:25:37.2
+                LocalTime.of(14, 25, 37, 230000000), // p2: 14:25:37.23
+                LocalTime.of(14, 25, 37, 234000000), // p3: 14:25:37.234
+                LocalTime.of(14, 25, 37, 234500000), // p4: 14:25:37.2345
+                LocalTime.of(14, 25, 37, 234560000), // p5: 14:25:37.23456
+                LocalTime.of(14, 25, 37, 234567000)  // p6: 14:25:37.234567
               )
             )
 
@@ -343,8 +357,17 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
               rowTimes.zipWithIndex.foreach { case (expectedTime, timeIdx) =>
                 val precision = precisions(timeIdx)
                 val colName = s"time_p$precision"
-                assert(rows(rowIdx).getAs[LocalTime](colName) === expectedTime,
-                  s"Row $rowIdx, column $colName")
+                val actualTime = rows(rowIdx).getAs[LocalTime](colName)
+
+                // Compare at the appropriate precision level
+                val precisionDivisor = math.pow(10, 9 - precision).toLong
+                val expectedNanos =
+                  (expectedTime.toNanoOfDay / precisionDivisor) * precisionDivisor
+                val actualNanos =
+                  (actualTime.toNanoOfDay / precisionDivisor) * precisionDivisor
+
+                assert(actualNanos === expectedNanos,
+                  s"Row $rowIdx, column $colName: expected $expectedTime but got $actualTime")
               }
             }
           }
@@ -386,22 +409,34 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
             assert(ts0.toString.startsWith("1970-01-01 11:47:19"))
             assert(rows(2).isNullAt(1))
           } else {
-            // New mode: write/read multiple TIME columns at different precisions
+            // New mode: write/read TIME columns at ALL precisions (0-6)
             val writeData = Seq(
               Row(1,
-                LocalTime.of(7, 23, 41),
-                LocalTime.of(11, 47, 19, 200000000),
-                LocalTime.of(16, 52, 36, 200000000)),
+                LocalTime.of(8, 30, 45, 0),          // p0: 08:30:45
+                LocalTime.of(8, 30, 45, 100000000),  // p1: 08:30:45.1
+                LocalTime.of(8, 30, 45, 120000000),  // p2: 08:30:45.12
+                LocalTime.of(8, 30, 45, 123000000),  // p3: 08:30:45.123
+                LocalTime.of(8, 30, 45, 123400000),  // p4: 08:30:45.1234
+                LocalTime.of(8, 30, 45, 123450000),  // p5: 08:30:45.12345
+                LocalTime.of(8, 30, 45, 123456000)), // p6: 08:30:45.123456
               Row(2,
-                LocalTime.of(19, 14, 28),
-                LocalTime.of(5, 38, 54, 300000000),
-                LocalTime.of(22, 9, 17, 300000000)),
-              Row(3, null, null, null)
+                LocalTime.of(14, 25, 37, 0),         // p0: 14:25:37
+                LocalTime.of(14, 25, 37, 200000000), // p1: 14:25:37.2
+                LocalTime.of(14, 25, 37, 230000000), // p2: 14:25:37.23
+                LocalTime.of(14, 25, 37, 234000000), // p3: 14:25:37.234
+                LocalTime.of(14, 25, 37, 234500000), // p4: 14:25:37.2345
+                LocalTime.of(14, 25, 37, 234560000), // p5: 14:25:37.23456
+                LocalTime.of(14, 25, 37, 234567000)), // p6: 14:25:37.234567
+              Row(3, null, null, null, null, null, null, null)
             )
             val writeSchema = StructType(Seq(
               StructField("id", IntegerType, nullable = false),
               StructField("time_p0", TimeType(0), nullable = true),
+              StructField("time_p1", TimeType(1), nullable = true),
+              StructField("time_p2", TimeType(2), nullable = true),
               StructField("time_p3", TimeType(3), nullable = true),
+              StructField("time_p4", TimeType(4), nullable = true),
+              StructField("time_p5", TimeType(5), nullable = true),
               StructField("time_p6", TimeType(6), nullable = true)
             ))
 
@@ -413,7 +448,7 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
             val rows = readDf.orderBy("id").collect()
 
             // New mode: reads as TimeType with correct precisions
-            val precisions = Seq(0, 3, 6)
+            val precisions = Seq(0, 1, 2, 3, 4, 5, 6)
             precisions.foreach { p =>
               assert(readDf.schema(s"time_p$p").dataType === TimeType(p),
                 s"Expected TimeType($p) for time_p$p")
@@ -421,14 +456,22 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
 
             val expectedRoundTripTimes = Seq(
               Seq(
-                LocalTime.of(7, 23, 41),
-                LocalTime.of(11, 47, 19, 200000000),
-                LocalTime.of(16, 52, 36, 200000000)
+                LocalTime.of(8, 30, 45, 0),          // p0
+                LocalTime.of(8, 30, 45, 100000000),  // p1
+                LocalTime.of(8, 30, 45, 120000000),  // p2
+                LocalTime.of(8, 30, 45, 123000000),  // p3
+                LocalTime.of(8, 30, 45, 123400000),  // p4
+                LocalTime.of(8, 30, 45, 123450000),  // p5
+                LocalTime.of(8, 30, 45, 123456000)   // p6
               ),
               Seq(
-                LocalTime.of(19, 14, 28),
-                LocalTime.of(5, 38, 54, 300000000),
-                LocalTime.of(22, 9, 17, 300000000)
+                LocalTime.of(14, 25, 37, 0),         // p0
+                LocalTime.of(14, 25, 37, 200000000), // p1
+                LocalTime.of(14, 25, 37, 230000000), // p2
+                LocalTime.of(14, 25, 37, 234000000), // p3
+                LocalTime.of(14, 25, 37, 234500000), // p4
+                LocalTime.of(14, 25, 37, 234560000), // p5
+                LocalTime.of(14, 25, 37, 234567000)  // p6
               )
             )
 
@@ -436,13 +479,24 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
               rowTimes.zipWithIndex.foreach { case (expectedTime, timeIdx) =>
                 val precision = precisions(timeIdx)
                 val colName = s"time_p$precision"
-                assert(rows(rowIdx).getAs[LocalTime](colName) === expectedTime,
-                  s"Row $rowIdx, column $colName")
+                val actualTime = rows(rowIdx).getAs[LocalTime](colName)
+
+                // Compare at the appropriate precision level
+                val precisionDivisor = math.pow(10, 9 - precision).toLong
+                val expectedNanos =
+                  (expectedTime.toNanoOfDay / precisionDivisor) * precisionDivisor
+                val actualNanos =
+                  (actualTime.toNanoOfDay / precisionDivisor) * precisionDivisor
+
+                assert(actualNanos === expectedNanos,
+                  s"Row $rowIdx, column $colName: expected $expectedTime " +
+                  s"but got $actualTime (expected nanos: $expectedNanos, " +
+                  s"actual nanos: $actualNanos)")
               }
             }
 
             // Verify nulls (row 3)
-            (1 to 3).foreach { colIdx => assert(rows(2).isNullAt(colIdx)) }
+            (1 to 7).foreach { colIdx => assert(rows(2).isNullAt(colIdx)) }
           }
         }
       }

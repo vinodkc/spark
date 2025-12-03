@@ -159,6 +159,14 @@ private case class MsSqlServerDialect() extends JdbcDialect with NoLegacyJDBCErr
       case java.sql.Types.REAL if !SQLConf.get.legacyMsSqlServerNumericMappingEnabled =>
         Some(FloatType)
       case GEOMETRY | GEOGRAPHY => Some(BinaryType)
+      case java.sql.Types.TIME =>
+        if (SQLConf.get.legacyJdbcTimeAsTimestamp) {
+          Some(TimestampType)
+        } else {
+          val scale = md.build().getLong("scale").toInt
+          val timePrecision = if (scale >= 0 && scale <= 6) scale else 6
+          Some(TimeType(timePrecision))
+        }
       case _ => None
     }
   }
@@ -187,9 +195,9 @@ private case class MsSqlServerDialect() extends JdbcDialect with NoLegacyJDBCErr
       stmt: java.sql.PreparedStatement,
       pos: Int,
       time: java.time.LocalTime): Unit = {
-    // Write TimeType as TIME with proper precision
-    // Note: Legacy flag only affects reading TIME columns, not writing them
-    stmt.setObject(pos, time, java.sql.Types.TIME)
+    val timestamp = java.sql.Timestamp.valueOf(
+      java.time.LocalDateTime.of(java.time.LocalDate.ofEpochDay(0), time))
+    stmt.setTimestamp(pos, timestamp)
   }
 
   override def isCascadingTruncateTable(): Option[Boolean] = Some(false)
