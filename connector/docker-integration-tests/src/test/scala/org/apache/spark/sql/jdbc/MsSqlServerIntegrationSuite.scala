@@ -400,16 +400,17 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
             // Verify SQL column type: should be DATETIME2 (not TIME) in legacy mode
             Using.resource(getConnection()) { conn =>
               Using.resource(conn.createStatement()) { stmt =>
-                val rs = stmt.executeQuery(
+                Using.resource(stmt.executeQuery(
                   s"""SELECT t.name AS data_type, c.scale
                      |FROM sys.columns c
                      |JOIN sys.types t ON c.user_type_id = t.user_type_id
                      |WHERE c.object_id = OBJECT_ID('$tableName')
-                     |AND c.name = 'time_col'""".stripMargin)
-                assert(rs.next())
-                val dataType = rs.getString("data_type")
-                assert(dataType == "datetime2",
-                  s"Expected DATETIME2 for TimeType in legacy mode, got $dataType")
+                     |AND c.name = 'time_col'""".stripMargin)) { rs =>
+                  assert(rs.next())
+                  val dataType = rs.getString("data_type")
+                  assert(dataType == "datetime2",
+                    s"Expected DATETIME2 for TimeType in legacy mode, got $dataType")
+                }
               }
             }
 
@@ -462,23 +463,24 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
             // Verify SQL column types: should be TIME(precision) in new mode
             Using.resource(getConnection()) { conn =>
               Using.resource(conn.createStatement()) { stmt =>
-                val rs = stmt.executeQuery(
+                Using.resource(stmt.executeQuery(
                   s"""SELECT c.name AS column_name, t.name AS data_type, c.scale
                      |FROM sys.columns c
                      |JOIN sys.types t ON c.user_type_id = t.user_type_id
                      |WHERE c.object_id = OBJECT_ID('$tableName')
                      |AND c.name LIKE 'time_p%'
-                     |ORDER BY c.name""".stripMargin)
+                     |ORDER BY c.name""".stripMargin)) { rs =>
 
-                val precisions = Seq(0, 1, 2, 3, 4, 5, 6)
-                precisions.foreach { p =>
-                  assert(rs.next(), s"Expected column time_p$p")
-                  val colName = rs.getString("column_name")
-                  val dataType = rs.getString("data_type")
-                  val scale = rs.getInt("scale")
-                  assert(colName == s"time_p$p", s"Expected time_p$p, got $colName")
-                  assert(dataType == "time", s"Expected TIME for time_p$p, got $dataType")
-                  assert(scale == p, s"Expected scale $p for time_p$p, got $scale")
+                  val precisions = Seq(0, 1, 2, 3, 4, 5, 6)
+                  precisions.foreach { p =>
+                    assert(rs.next(), s"Expected column time_p$p")
+                    val colName = rs.getString("column_name")
+                    val dataType = rs.getString("data_type")
+                    val scale = rs.getInt("scale")
+                    assert(colName == s"time_p$p", s"Expected time_p$p, got $colName")
+                    assert(dataType == "time", s"Expected TIME for time_p$p, got $dataType")
+                    assert(scale == p, s"Expected scale $p for time_p$p, got $scale")
+                  }
                 }
               }
             }
