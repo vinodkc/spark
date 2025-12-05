@@ -3131,17 +3131,17 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
     assertResult(expectedMetadata) { jdbcRdd.getDatabaseMetadata }
   }
 
-  test("V2 TIME type with legacy flag=false (read, TIME(0-6))") {
-    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "false") {
-      withTable("h2.test.time_v2_new") {
-        sql("CREATE TABLE h2.test.time_v2_new " +
+  test("V2 TIME type with strict mode (read, TIME(0-6))") {
+    withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> "true") {
+      withTable("h2.test.time_v2_strict") {
+        sql("CREATE TABLE h2.test.time_v2_strict " +
           "(id INT, time_p0 TIME(0), time_p1 TIME(1), time_p2 TIME(2), time_p3 TIME(3), " +
           "time_p4 TIME(4), time_p5 TIME(5), time_p6 TIME(6))")
-        sql("INSERT INTO h2.test.time_v2_new VALUES " +
+        sql("INSERT INTO h2.test.time_v2_strict VALUES " +
           "(1, TIME '10:20:30', TIME '10:20:30.1', TIME '10:20:30.12', TIME '10:20:30.123', " +
           "TIME '10:20:30.1234', TIME '10:20:30.12345', TIME '10:20:30.123456')")
 
-        val df = sql("SELECT * FROM h2.test.time_v2_new")
+        val df = sql("SELECT * FROM h2.test.time_v2_strict")
 
         // Verify schema for all precisions
         (0 to 6).foreach { p =>
@@ -3171,7 +3171,7 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
   }
 
   test("V2 TIME type write and read round-trip (TIME(0-6))") {
-    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "false") {
+    withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> "true") {
       withTable("h2.test.time_v2_roundtrip") {
         // Test all precisions 0-6
         val data = Seq(
@@ -3251,7 +3251,7 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
   }
 
   test("V2 TIME type filter pushdown") {
-    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "false") {
+    withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> "true") {
       withTable("h2.test.time_v2_filter") {
         sql("CREATE TABLE h2.test.time_v2_filter (id INT, shift_time TIME(6))")
         sql("INSERT INTO h2.test.time_v2_filter VALUES " +
@@ -3272,7 +3272,7 @@ class JDBCV2Suite extends QueryTest with SharedSparkSession with ExplainSuiteHel
   }
 
   test("V2 TIME type with NULL and boundary values") {
-    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "false") {
+    withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> "true") {
       withTable("h2.test.time_v2_boundary") {
         sql("CREATE TABLE h2.test.time_v2_boundary " +
           "(id INT, midnight TIME(6), noon TIME(6), end_day TIME(6))")

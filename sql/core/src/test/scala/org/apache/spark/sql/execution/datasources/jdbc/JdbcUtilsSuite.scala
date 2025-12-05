@@ -74,18 +74,18 @@ class JdbcUtilsSuite extends SparkFunSuite with SQLConfHelper {
   }
 
   test("getCommonJDBCType for TimeType (legacy and new behavior)") {
-    Seq(false, true).foreach { legacyFlag =>
-      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
+    Seq(false, true).foreach { strictTimeType =>
+      withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> strictTimeType.toString) {
         (0 to 6).foreach { precision =>
-          val expected = if (legacyFlag) {
-            // Legacy mode: TimeType maps to TIMESTAMP
+          val expected = if (!strictTimeType) {
+            // Non-strict mode: TimeType maps to TIMESTAMP
             Some(JdbcType("TIMESTAMP", java.sql.Types.TIMESTAMP))
           } else {
-            // New mode: TimeType maps to TIME with precision
+            // Strict mode: TimeType maps to TIME with precision
             Some(JdbcType(s"TIME($precision)", java.sql.Types.TIME))
           }
           assert(JdbcUtils.getCommonJDBCType(TimeType(precision)) === expected,
-            s"TimeType($precision) with legacyFlag=$legacyFlag")
+            s"TimeType($precision) with strictTimeType=$strictTimeType")
         }
       }
     }

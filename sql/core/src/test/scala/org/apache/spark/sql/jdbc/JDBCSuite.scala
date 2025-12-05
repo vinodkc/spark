@@ -654,42 +654,36 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
   }
 
   test("H2 time types") {
-    // Explicitly test legacy behavior where TIME is read as TimestampType with epoch date
-    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "true") {
-      val rows = sql("SELECT * FROM timetypes").collect()
-      val cal = new GregorianCalendar(java.util.Locale.ROOT)
-      cal.setTime(rows(0).getAs[java.sql.Timestamp](0))
-      assert(cal.get(Calendar.HOUR_OF_DAY) === 12)
-      assert(cal.get(Calendar.MINUTE) === 34)
-      assert(cal.get(Calendar.SECOND) === 56)
-      cal.setTime(rows(0).getAs[java.sql.Timestamp](1))
-      assert(cal.get(Calendar.YEAR) === 1996)
-      assert(cal.get(Calendar.MONTH) === 0)
-      assert(cal.get(Calendar.DAY_OF_MONTH) === 1)
-      cal.setTime(rows(0).getAs[java.sql.Timestamp](2))
-      assert(cal.get(Calendar.YEAR) === 2002)
-      assert(cal.get(Calendar.MONTH) === 1)
-      assert(cal.get(Calendar.DAY_OF_MONTH) === 20)
-      assert(cal.get(Calendar.HOUR) === 11)
-      assert(cal.get(Calendar.MINUTE) === 22)
-      assert(cal.get(Calendar.SECOND) === 33)
-      assert(cal.get(Calendar.MILLISECOND) === 543)
-      assert(rows(0).getAs[java.sql.Timestamp](2).getNanos === 543543000)
-    }
+    val rows = sql("SELECT * FROM timetypes").collect()
+    val cal = new GregorianCalendar(java.util.Locale.ROOT)
+    cal.setTime(rows(0).getAs[java.sql.Timestamp](0))
+    assert(cal.get(Calendar.HOUR_OF_DAY) === 12)
+    assert(cal.get(Calendar.MINUTE) === 34)
+    assert(cal.get(Calendar.SECOND) === 56)
+    cal.setTime(rows(0).getAs[java.sql.Timestamp](1))
+    assert(cal.get(Calendar.YEAR) === 1996)
+    assert(cal.get(Calendar.MONTH) === 0)
+    assert(cal.get(Calendar.DAY_OF_MONTH) === 1)
+    cal.setTime(rows(0).getAs[java.sql.Timestamp](2))
+    assert(cal.get(Calendar.YEAR) === 2002)
+    assert(cal.get(Calendar.MONTH) === 1)
+    assert(cal.get(Calendar.DAY_OF_MONTH) === 20)
+    assert(cal.get(Calendar.HOUR) === 11)
+    assert(cal.get(Calendar.MINUTE) === 22)
+    assert(cal.get(Calendar.SECOND) === 33)
+    assert(cal.get(Calendar.MILLISECOND) === 543)
+    assert(rows(0).getAs[java.sql.Timestamp](2).getNanos === 543543000)
   }
 
   test("SPARK-34357: test TIME types") {
-    // Explicitly test legacy behavior where TIME is read as TimestampType with epoch date
-    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "true") {
-      val rows = spark.read.jdbc(
-        urlWithUserAndPass, "TEST.TIMETYPES", new Properties()).collect()
-      val cachedRows = spark.read.jdbc(urlWithUserAndPass, "TEST.TIMETYPES", new Properties())
-        .cache().collect()
-      val expectedTimeAtEpoch = java.sql.Timestamp.valueOf("1970-01-01 12:34:56.0")
-      assert(rows(0).getAs[java.sql.Timestamp](0) === expectedTimeAtEpoch)
-      assert(rows(1).getAs[java.sql.Timestamp](0) === expectedTimeAtEpoch)
-      assert(cachedRows(0).getAs[java.sql.Timestamp](0) === expectedTimeAtEpoch)
-    }
+    val rows = spark.read.jdbc(
+      urlWithUserAndPass, "TEST.TIMETYPES", new Properties()).collect()
+    val cachedRows = spark.read.jdbc(urlWithUserAndPass, "TEST.TIMETYPES", new Properties())
+      .cache().collect()
+    val expectedTimeAtEpoch = java.sql.Timestamp.valueOf("1970-01-01 12:34:56.0")
+    assert(rows(0).getAs[java.sql.Timestamp](0) === expectedTimeAtEpoch)
+    assert(rows(1).getAs[java.sql.Timestamp](0) === expectedTimeAtEpoch)
+    assert(cachedRows(0).getAs[java.sql.Timestamp](0) === expectedTimeAtEpoch)
   }
 
   test("SPARK-47396: TIME WITHOUT TIME ZONE preferTimestampNTZ") {
@@ -764,7 +758,7 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
   }
 
   test("TIME type with legacy flag=false (new behavior - read, TIME(0-6))") {
-    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "false") {
+    withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> "true") {
       withJdbcTable("TEST.TIME_NEW") {
         execSQL("CREATE TABLE TEST.TIME_NEW (id INT, time_p0 TIME(0), time_p1 TIME(1), " +
           "time_p2 TIME(2), time_p3 TIME(3), time_p4 TIME(4), time_p5 TIME(5), time_p6 TIME(6))")
@@ -802,9 +796,9 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
   }
 
   test("TIME type write and read round-trip (TIME(0-6))") {
-    Seq(true, false).foreach { legacyFlag =>
-      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
-        val tableName = s"TEST.TIME_ROUNDTRIP_${if (legacyFlag) "LEGACY" else "NEW"}"
+    Seq(false, true).foreach { strictTimeType =>
+      withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> strictTimeType.toString) {
+        val tableName = s"TEST.TIME_ROUNDTRIP_${if (strictTimeType) "STRICT" else "NONSTRICT"}"
         withJdbcTable(tableName) {
           // Test all precisions 0-6
           val data = Seq(
@@ -842,8 +836,8 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
           val readDf = spark.read.jdbc(urlWithUserAndPass, tableName, new Properties())
           val rows = readDf.orderBy("id").collect()
 
-          if (legacyFlag) {
-            // Legacy mode: reads as TimestampType with epoch date
+          if (!strictTimeType) {
+            // Non-strict mode: reads as TimestampType with epoch date
             (0 to 6).foreach { p =>
               assertIsTimestampType(readDf.schema(s"time_p$p").dataType)
             }
@@ -896,7 +890,7 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
   }
 
   test("TIME type with NULL values") {
-    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "false") {
+    withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> "true") {
       withJdbcTable("TEST.TIME_NULL") {
         execSQL("CREATE TABLE TEST.TIME_NULL (id INT, time_col TIME(6))")
         execSQL("INSERT INTO TEST.TIME_NULL VALUES (1, NULL), (2, TIME '10:20:30')")
@@ -911,7 +905,7 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
   }
 
   test("TIME type filter pushdown") {
-    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "false") {
+    withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> "true") {
       withJdbcTable("TEST.TIME_FILTER") {
         execSQL("CREATE TABLE TEST.TIME_FILTER (id INT, shift_time TIME(6))")
         execSQL("INSERT INTO TEST.TIME_FILTER VALUES (1, TIME '06:00:00'), " +
@@ -928,7 +922,7 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
   }
 
   test("TIME type boundary values") {
-    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "false") {
+    withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> "true") {
       conn.prepareStatement(
         "CREATE TABLE TEST.TIME_BOUNDARY (id INT, morning TIME(6), midnight TIME(6), " +
         "end_of_day TIME(6))")
@@ -2447,14 +2441,14 @@ class JDBCSuite extends QueryTest with SharedSparkSession {
     }
 
     // Verify TimeType write mapping delegates to getCommonJDBCType
-    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "false") {
+    withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> "true") {
       assert(snowflakeDialect.getJDBCType(TimeType(0)).get.databaseTypeDefinition === "TIME(0)",
         "Snowflake TimeType(0) should map to TIME(0)")
       assert(snowflakeDialect.getJDBCType(TimeType(6)).get.databaseTypeDefinition === "TIME(6)",
         "Snowflake TimeType(6) should map to TIME(6)")
     }
 
-    withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> "true") {
+    withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> "false") {
       assert(snowflakeDialect.getJDBCType(TimeType(0)).get.databaseTypeDefinition === "TIMESTAMP",
         "Snowflake TimeType should map to TIMESTAMP in legacy mode")
     }

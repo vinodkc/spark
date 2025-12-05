@@ -269,7 +269,7 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
   test("TIME type with legacy flag (MS SQL Server TIME(0,3,6))") {
     Seq(false, true).foreach { strictTimeType =>
       withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> strictTimeType.toString) {
-        val tableName = if (strictTimeType) "test_time_new" else "test_time_legacy"
+        val tableName = if (strictTimeType) "test_time_strict" else "test_time_nonstrict"
 
         withTable(tableName) {
           Using.resource(getConnection()) { conn =>

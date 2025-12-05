@@ -626,7 +626,7 @@ class OracleIntegrationSuite extends SharedJDBCIntegrationSuite
 
     Seq(false, true).foreach { strictTimeType =>
       withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> strictTimeType.toString) {
-        val tableName = if (strictTimeType) "test_time_new" else "test_time_legacy"
+        val tableName = if (strictTimeType) "test_time_strict" else "test_time_nonstrict"
 
         withTable(tableName) {
           // Write TimeType DataFrame to Oracle

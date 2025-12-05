@@ -392,7 +392,7 @@ class MySQLOverMariaConnectorIntegrationSuite extends MySQLIntegrationSuite {
 
     Seq(false, true).foreach { strictTimeType =>
       withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> strictTimeType.toString) {
-        val tableName = if (strictTimeType) "test_time_legacy" else "test_time_new"
+        val tableName = if (strictTimeType) "test_time_strict" else "test_time_nonstrict"
 
         withTable(tableName) {
           Using.resource(getConnection()) { conn =>
