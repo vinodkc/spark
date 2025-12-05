@@ -20,12 +20,14 @@ package org.apache.spark.sql.jdbc
 import java.sql.{SQLException, Types}
 import java.util.Locale
 
+import org.apache.spark.sql.catalyst.SQLConfHelper
 import org.apache.spark.sql.connector.catalog.Identifier
 import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors}
 import org.apache.spark.sql.types._
 
 
-private case class DerbyDialect() extends JdbcDialect with NoLegacyJDBCError {
+private case class DerbyDialect() extends JdbcDialect with SQLConfHelper
+    with NoLegacyJDBCError {
 
   override def canHandle(url: String): Boolean =
     url.toLowerCase(Locale.ROOT).startsWith("jdbc:derby")
@@ -63,6 +65,12 @@ private case class DerbyDialect() extends JdbcDialect with NoLegacyJDBCError {
         (t.precision, t.scale)
       }
       Option(JdbcType(s"DECIMAL($p,$s)", java.sql.Types.DECIMAL))
+    case _: TimeType if conf.enforceStrictTimeType =>
+      // Strict mode: Always use TIME (Derby TIME only supports seconds precision)
+      // Note: Fractional seconds will be truncated as Derby TIME doesn't support precision
+      Some(JdbcType("TIME", java.sql.Types.TIME))
+    // Non-strict mode (default): falls back to JdbcUtils.getCommonJDBCType
+    // which maps TimeType -> TIMESTAMP
     case _ => None
   }
 

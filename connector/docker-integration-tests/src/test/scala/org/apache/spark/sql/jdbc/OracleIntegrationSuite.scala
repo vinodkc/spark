@@ -624,13 +624,13 @@ class OracleIntegrationSuite extends SharedJDBCIntegrationSuite
     import java.time.LocalTime
     val testTime = LocalTime.of(9, 30, 45, 123456000)
 
-    Seq(false, true).foreach { legacyFlag =>
-      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
-        val tableName = if (legacyFlag) "test_time_legacy" else "test_time_new"
+    Seq(false, true).foreach { strictTimeType =>
+      withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> strictTimeType.toString) {
+        val tableName = if (strictTimeType) "test_time_new" else "test_time_legacy"
 
         withTable(tableName) {
-          // Write TimeType DataFrame to Oracle - same data for both modes
-          val writeData = if (legacyFlag) {
+          // Write TimeType DataFrame to Oracle
+          val writeData = if (!strictTimeType) {
             Seq(Row(BigDecimal.valueOf(1), testTime))
           } else {
             Seq(
@@ -668,7 +668,7 @@ class OracleIntegrationSuite extends SharedJDBCIntegrationSuite
 
             val columnTypeName = columnInfo.get._2
             assert(columnTypeName.toUpperCase(java.util.Locale.ROOT).contains("TIMESTAMP"),
-              s"Expected TIMESTAMP type but got $columnTypeName with flag=$legacyFlag. " +
+              s"Expected TIMESTAMP type but got $columnTypeName with flag=$strictTimeType. " +
               "Oracle doesn't support TIME type.")
           }
 
@@ -677,7 +677,7 @@ class OracleIntegrationSuite extends SharedJDBCIntegrationSuite
           // Schema should always be TimestampType (Oracle returns TIMESTAMP, not TIME)
           val actualType = readDf.schema("time_col").dataType
           assert(actualType.isInstanceOf[TimestampType],
-            s"Expected TimestampType with flag=$legacyFlag but got $actualType")
+            s"Expected TimestampType with flag=$strictTimeType but got $actualType")
 
           // Verify values (stored as timestamps with epoch date)
           val rows = readDf.orderBy("id").collect()
@@ -685,7 +685,7 @@ class OracleIntegrationSuite extends SharedJDBCIntegrationSuite
           assert(ts.toString.startsWith("1970-01-01 09:30:45"),
             s"Expected timestamp starting with '1970-01-01 09:30:45' but got ${ts.toString}")
 
-          if (!legacyFlag) {
+          if (strictTimeType) {
             val ts2 = rows(1).getAs[java.sql.Timestamp]("time_col")
             assert(ts2.toString.startsWith("1970-01-01 14:15:30"))
             assert(rows(2).isNullAt(1))

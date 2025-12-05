@@ -267,15 +267,15 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
   }
 
   test("TIME type with legacy flag (MS SQL Server TIME(0,3,6))") {
-    Seq(false, true).foreach { legacyFlag =>
-      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
-        val tableName = if (legacyFlag) "test_time_legacy" else "test_time_new"
+    Seq(false, true).foreach { strictTimeType =>
+      withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> strictTimeType.toString) {
+        val tableName = if (strictTimeType) "test_time_new" else "test_time_legacy"
 
         withTable(tableName) {
           Using.resource(getConnection()) { conn =>
             Using.resource(conn.createStatement()) { stmt =>
-              if (legacyFlag) {
-                // Legacy mode: test with single TIME column (backward compatibility)
+              if (!strictTimeType) {
+                // Non-strict mode: test with single TIME column
                 stmt.executeUpdate(
                   s"""CREATE TABLE $tableName (
                      |  id INT,
@@ -287,7 +287,7 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
                      |(2, '06:15:47.700')
                      |""".stripMargin)
               } else {
-                // New mode: test with TIME columns at ALL precisions (0-6)
+                // Strict mode: test with TIME columns at ALL precisions (0-6)
                 stmt.executeUpdate(
                   s"""CREATE TABLE $tableName (
                      |  id INT,
@@ -312,18 +312,18 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
 
           val df = spark.read.jdbc(jdbcUrl, tableName, new Properties())
 
-          if (legacyFlag) {
-            // Legacy: reads single TIME column as TimestampType
+          if (!strictTimeType) {
+            // Non-strict mode: reads single TIME column as TimestampType
             assert(df.schema("time_col").dataType.isInstanceOf[TimestampType] ||
               df.schema("time_col").dataType.isInstanceOf[TimestampNTZType],
-              s"Expected TimestampType for time_col with flag=$legacyFlag")
+              s"Expected TimestampType for time_col with flag=$strictTimeType")
 
             val rows = df.orderBy("id").collect()
             val ts0 = rows(0).getAs[java.sql.Timestamp]("time_col")
             assert(ts0.toString.startsWith("1970-01-01 13:45:22"),
               s"Expected timestamp at epoch date but got ${ts0.toString}")
           } else {
-            // New: reads as TimeType with correct precision for ALL precisions (0-6)
+            // Strict mode: reads as TimeType with correct precision for ALL precisions (0-6)
             val precisions = Seq(0, 1, 2, 3, 4, 5, 6)
             precisions.foreach { p =>
               assert(df.schema(s"time_p$p").dataType === TimeType(p),
@@ -377,13 +377,13 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
   }
 
   test("TIME type write and read round-trip with SQL column type verification") {
-    Seq(false, true).foreach { legacyFlag =>
-      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
-        val tableName = s"test_time_roundtrip_${if (legacyFlag) "legacy" else "new"}"
+    Seq(false, true).foreach { strictTimeType =>
+      withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> strictTimeType.toString) {
+        val tableName = s"test_time_roundtrip_${if (strictTimeType) "new" else "legacy"}"
 
         withTable(tableName) {
-          if (legacyFlag) {
-            // Legacy mode: write/read single TIME column (backward compatibility)
+          if (!strictTimeType) {
+            // Non-strict mode: write/read single TIME column
             val writeData = Seq(
               Row(1, LocalTime.of(11, 47, 19, 200000000)),
               Row(2, LocalTime.of(5, 38, 54, 300000000)),
@@ -397,7 +397,7 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
             val writeDf = spark.createDataFrame(writeData.asJava, writeSchema)
             writeDf.write.mode("overwrite").jdbc(jdbcUrl, tableName, new Properties())
 
-            // Verify SQL column type: should be DATETIME2 (not TIME) in legacy mode
+            // Verify SQL column type: should be DATETIME2 (not TIME) in non-strict mode
             Using.resource(getConnection()) { conn =>
               Using.resource(conn.createStatement()) { stmt =>
                 Using.resource(stmt.executeQuery(
@@ -409,7 +409,7 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
                   assert(rs.next())
                   val dataType = rs.getString("data_type")
                   assert(dataType == "datetime2",
-                    s"Expected DATETIME2 for TimeType in legacy mode, got $dataType")
+                    s"Expected DATETIME2 for TimeType in non-strict mode, got $dataType")
                 }
               }
             }
@@ -418,7 +418,7 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
             val readDf = spark.read.jdbc(jdbcUrl, tableName, new Properties())
             val rows = readDf.orderBy("id").collect()
 
-            // Legacy mode: reads as TimestampType with epoch date
+            // Non-strict mode: reads as TimestampType with epoch date
             assert(readDf.schema("time_col").dataType.isInstanceOf[TimestampType] ||
               readDf.schema("time_col").dataType.isInstanceOf[TimestampNTZType])
 
@@ -426,7 +426,7 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
             assert(ts0.toString.startsWith("1970-01-01 11:47:19"))
             assert(rows(2).isNullAt(1))
           } else {
-            // New mode: write/read TIME columns at ALL precisions (0-6)
+            // Strict mode: write/read TIME columns at ALL precisions (0-6)
             val writeData = Seq(
               Row(1,
                 LocalTime.of(8, 30, 45, 0),          // p0: 08:30:45
@@ -460,7 +460,7 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
             val writeDf = spark.createDataFrame(writeData.asJava, writeSchema)
             writeDf.write.mode("overwrite").jdbc(jdbcUrl, tableName, new Properties())
 
-            // Verify SQL column types: should be TIME(precision) in new mode
+            // Verify SQL column types: should be TIME(precision) in strict mode
             Using.resource(getConnection()) { conn =>
               Using.resource(conn.createStatement()) { stmt =>
                 Using.resource(stmt.executeQuery(
@@ -489,7 +489,7 @@ class MsSqlServerIntegrationSuite extends SharedJDBCIntegrationSuite {
             val readDf = spark.read.jdbc(jdbcUrl, tableName, new Properties())
             val rows = readDf.orderBy("id").collect()
 
-            // New mode: reads as TimeType with correct precisions
+            // Strict mode: reads as TimeType with correct precisions
             val precisions = Seq(0, 1, 2, 3, 4, 5, 6)
             precisions.foreach { p =>
               assert(readDf.schema(s"time_p$p").dataType === TimeType(p),

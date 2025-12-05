@@ -289,9 +289,9 @@ class DB2IntegrationSuite extends SharedJDBCIntegrationSuite {
     // DB2 TIME doesn't support fractional seconds - use time value without microseconds
     val testTime = "15:45:30"
 
-    Seq(false, true).foreach { legacyFlag =>
-      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
-        val tableName = if (legacyFlag) "test_time_legacy" else "test_time_new"
+    Seq(false, true).foreach { strictTimeType =>
+      withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> strictTimeType.toString) {
+        val tableName = if (strictTimeType) "test_time_new" else "test_time_legacy"
 
         withTable(tableName) {
           Using.resource(getConnection()) { conn =>
@@ -304,15 +304,15 @@ class DB2IntegrationSuite extends SharedJDBCIntegrationSuite {
 
           val df = spark.read.jdbc(jdbcUrl, tableName, new Properties())
 
-          if (legacyFlag) {
-            // Legacy: reads as TimestampType
+          if (!strictTimeType) {
+            // Non-strict mode: reads as TimestampType
             assert(df.schema("TIME_COL").dataType.isInstanceOf[TimestampType] ||
               df.schema("TIME_COL").dataType.isInstanceOf[TimestampNTZType])
             val row = df.collect()(0)
             val ts = row.getAs[java.sql.Timestamp]("TIME_COL")
             assert(ts.toString.startsWith(s"1970-01-01 $testTime"))
           } else {
-            // New: reads as TimeType
+            // Strict mode: reads as TimeType
             // DB2 TIME doesn't support fractional seconds, so precision should be 0
             assert(df.schema("TIME_COL").dataType === TimeType(0),
               "DB2 TIME has no fractional seconds, expected TimeType(0)")
@@ -328,9 +328,9 @@ class DB2IntegrationSuite extends SharedJDBCIntegrationSuite {
   test("TIME type write and read round-trip") {
     import java.time.LocalTime
 
-    Seq(false, true).foreach { legacyFlag =>
-      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
-        val tableName = s"test_time_roundtrip_${if (legacyFlag) "legacy" else "new"}"
+    Seq(false, true).foreach { strictTimeType =>
+      withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> strictTimeType.toString) {
+        val tableName = s"test_time_roundtrip_${if (strictTimeType) "new" else "legacy"}"
 
         withTable(tableName) {
           // Write TimeType DataFrame
@@ -353,8 +353,8 @@ class DB2IntegrationSuite extends SharedJDBCIntegrationSuite {
           val readDf = spark.read.jdbc(jdbcUrl, tableName, new Properties())
           val rows = readDf.orderBy("id").collect()
 
-          if (legacyFlag) {
-            // Legacy mode: reads as TimestampType with epoch date
+          if (!strictTimeType) {
+            // Non-strict mode: reads as TimestampType with epoch date
             assert(readDf.schema("time_col").dataType.isInstanceOf[TimestampType] ||
               readDf.schema("time_col").dataType.isInstanceOf[TimestampNTZType])
 
@@ -364,7 +364,7 @@ class DB2IntegrationSuite extends SharedJDBCIntegrationSuite {
             assert(ts1.toString.startsWith("1970-01-01 14:30:15"))
             assert(rows(2).isNullAt(1))
           } else {
-            // New mode: reads as TimeType
+            // Strict mode: reads as TimeType
             // DB2 TIME doesn't support fractional seconds, so precision should be 0
             assert(readDf.schema("time_col").dataType === TimeType(0),
               "DB2 TIME has no fractional seconds, expected TimeType(0)")

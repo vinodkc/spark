@@ -5996,17 +5996,19 @@ object SQLConf {
     .booleanConf
     .createWithDefault(false)
 
-  val LEGACY_JDBC_TIME_AS_TIMESTAMP =
-    buildConf("spark.sql.legacy.jdbc.timeAsTimestamp.enabled")
-      .internal()
-      .doc("When set to true (default), JDBC TIME type columns are read as " +
-        "TimestampType/TimestampNTZType for backward compatibility with Spark versions prior to " +
-        "4.2.0. In this legacy behavior, TIME values appear as timestamps at epoch date " +
-        "(1970-01-01). When false, TIME columns are correctly read as TimeType with proper " +
-        "time-of-day semantics (JDBC TIME type support added in 4.2.0).")
+  val ENFORCE_STRICT_TIME_TYPE =
+    buildConf("spark.sql.jdbc.enforceStrictTimeType.enabled")
+      .doc("When true, Spark uses strict TIME type handling: JDBC TIME columns are read as " +
+        "Spark TimeType with proper time-of-day semantics (instead of TimestampType at epoch " +
+        "date 1970-01-01), and TimeType values are written as database TIME columns. " +
+        "Note: Some databases like DB2 and Derby have TIME types that only support seconds " +
+        "precision, so fractional seconds will be truncated when writing TimeType with " +
+        "precision > 0 to these databases. When false (default, non-strict mode), TIME " +
+        "columns are read as TimestampType/TimestampNTZType, and TimeType values are written " +
+        "as TIMESTAMP. Set to true to enable strict TIME type support.")
       .version("4.2.0")
       .booleanConf
-      .createWithDefault(true)
+      .createWithDefault(false)
 
   val MAX_CONCURRENT_OUTPUT_FILE_WRITERS = buildConf("spark.sql.maxConcurrentOutputFileWriters")
     .internal()
@@ -7816,7 +7818,7 @@ class SQLConf extends Serializable with Logging with SqlApiConf {
 
   def legacyIntervalEnabled: Boolean = getConf(LEGACY_INTERVAL_ENABLED)
 
-  def legacyJdbcTimeAsTimestamp: Boolean = getConf(LEGACY_JDBC_TIME_AS_TIMESTAMP)
+  def enforceStrictTimeType: Boolean = getConf(ENFORCE_STRICT_TIME_TYPE)
 
   def decorrelateInnerQueryEnabled: Boolean = getConf(SQLConf.DECORRELATE_INNER_QUERY_ENABLED)
 

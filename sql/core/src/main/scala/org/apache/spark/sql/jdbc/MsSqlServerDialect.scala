@@ -159,7 +159,7 @@ private case class MsSqlServerDialect() extends JdbcDialect with NoLegacyJDBCErr
       case java.sql.Types.REAL if !SQLConf.get.legacyMsSqlServerNumericMappingEnabled =>
         Some(FloatType)
       case GEOMETRY | GEOGRAPHY => Some(BinaryType)
-      case java.sql.Types.TIME if !SQLConf.get.legacyJdbcTimeAsTimestamp =>
+      case java.sql.Types.TIME if SQLConf.get.enforceStrictTimeType =>
         val scale = md.build().getLong("scale").toInt
         val timePrecision = if (scale >= 0 && scale <= 6) scale else 6
         Some(TimeType(timePrecision))
@@ -171,13 +171,13 @@ private case class MsSqlServerDialect() extends JdbcDialect with NoLegacyJDBCErr
     case TimestampType => Some(JdbcType("DATETIME", java.sql.Types.TIMESTAMP))
     case TimestampNTZType => Some(JdbcType("DATETIME", java.sql.Types.TIMESTAMP))
     case TimeType(precision) =>
-      if (SQLConf.get.legacyJdbcTimeAsTimestamp) {
-        // Legacy mode: map TimeType to DATETIME2 for backward compatibility
+      if (SQLConf.get.enforceStrictTimeType) {
+        // Strict mode: map TimeType to TIME(precision)
+        Some(JdbcType(s"TIME($precision)", java.sql.Types.TIME))
+      } else {
+        // Non-strict mode (default)
         // Note: Using DATETIME2 (not DATETIME) to preserve microsecond precision
         Some(JdbcType("DATETIME2", java.sql.Types.TIMESTAMP))
-      } else {
-        // New mode: map TimeType to TIME(precision)
-        Some(JdbcType(s"TIME($precision)", java.sql.Types.TIME))
       }
     case StringType => Some(JdbcType("NVARCHAR(MAX)", java.sql.Types.NVARCHAR))
     case BooleanType => Some(JdbcType("BIT", java.sql.Types.BIT))

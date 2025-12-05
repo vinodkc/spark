@@ -627,9 +627,9 @@ class PostgresIntegrationSuite extends SharedJDBCIntegrationSuite {
   test("TIME type with legacy flag (PostgreSQL TIME(0-6))") {
     import java.time.LocalTime
 
-    Seq(false, true).foreach { legacyFlag =>
-      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
-        val tableName = if (legacyFlag) "test_time_legacy" else "test_time_new"
+    Seq(false, true).foreach { strictTimeType =>
+      withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> strictTimeType.toString) {
+        val tableName = if (strictTimeType) "test_time_new" else "test_time_legacy"
 
         withTable(tableName) {
           Using.resource(getConnection()) { conn =>
@@ -658,13 +658,13 @@ class PostgresIntegrationSuite extends SharedJDBCIntegrationSuite {
 
           val df = spark.read.jdbc(jdbcUrl, tableName, new Properties())
 
-          if (legacyFlag) {
-            // Legacy: reads as TimestampType for all precisions
+          if (!strictTimeType) {
+            // Non-strict mode (default): reads as TimestampType for all precisions
             (0 to 6).foreach { p =>
               val colName = s"time_p$p"
               assert(df.schema(colName).dataType.isInstanceOf[TimestampType] ||
                 df.schema(colName).dataType.isInstanceOf[TimestampNTZType],
-                s"Expected TimestampType for $colName with flag=$legacyFlag")
+                s"Expected TimestampType for $colName with flag=$strictTimeType")
             }
 
             val rows = df.orderBy("id").collect()
@@ -672,11 +672,11 @@ class PostgresIntegrationSuite extends SharedJDBCIntegrationSuite {
             assert(ts0.toString.startsWith("1970-01-01 09:30:45"),
               s"Expected timestamp at epoch date but got ${ts0.toString}")
           } else {
-            // New: reads as TimeType with correct precision for each column
+            // Strict TIME type mode: reads as TimeType with correct precision for each column
             (0 to 6).foreach { p =>
               val colName = s"time_p$p"
               assert(df.schema(colName).dataType === TimeType(p),
-                s"Expected TimeType($p) for $colName with flag=$legacyFlag")
+                s"Expected TimeType($p) for $colName with flag=$strictTimeType")
             }
 
             val rows = df.orderBy("id").collect()
@@ -706,7 +706,7 @@ class PostgresIntegrationSuite extends SharedJDBCIntegrationSuite {
               rowTimes.zipWithIndex.foreach { case (expectedTime, precision) =>
                 val colName = s"time_p$precision"
                 assert(rows(rowIdx).getAs[LocalTime](colName) === expectedTime,
-                  s"Row $rowIdx, column $colName")
+                  s"Expected $expectedTime but got ${rows(rowIdx).getAs[LocalTime](colName)}")
               }
             }
           }
@@ -718,9 +718,9 @@ class PostgresIntegrationSuite extends SharedJDBCIntegrationSuite {
   test("TIME type write and read round-trip (PostgreSQL TIME(0-6))") {
     import java.time.LocalTime
 
-    Seq(false, true).foreach { legacyFlag =>
-      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
-        val tableName = s"test_time_roundtrip_${if (legacyFlag) "legacy" else "new"}"
+    Seq(false, true).foreach { strictTimeType =>
+      withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> strictTimeType.toString) {
+        val tableName = s"test_time_roundtrip_${if (strictTimeType) "new" else "legacy"}"
 
         withTable(tableName) {
           val writeData = Seq(
@@ -759,8 +759,8 @@ class PostgresIntegrationSuite extends SharedJDBCIntegrationSuite {
           val readDf = spark.read.jdbc(jdbcUrl, tableName, new Properties())
           val rows = readDf.orderBy("id").collect()
 
-          if (legacyFlag) {
-            // Legacy mode: reads as TimestampType with epoch date
+          if (!strictTimeType) {
+            // Non-strict mode (default): reads as TimestampType with epoch date
             (0 to 6).foreach { p =>
               val colName = s"time_p$p"
               assert(readDf.schema(colName).dataType.isInstanceOf[TimestampType] ||
@@ -771,7 +771,7 @@ class PostgresIntegrationSuite extends SharedJDBCIntegrationSuite {
             assert(ts0.toString.startsWith("1970-01-01 08:00:00"))
             (1 to 7).foreach { colIdx => assert(rows(2).isNullAt(colIdx)) }
           } else {
-            // New mode: reads as TimeType with correct precisions
+            // Strict TIME type mode: reads as TimeType with correct precisions
             (0 to 6).foreach { p =>
               val colName = s"time_p$p"
               assert(readDf.schema(colName).dataType === TimeType(p),

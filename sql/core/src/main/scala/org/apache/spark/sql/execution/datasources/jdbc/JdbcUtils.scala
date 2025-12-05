@@ -165,11 +165,11 @@ object JdbcUtils extends Logging with SQLConfHelper {
       case TimestampNTZType => Option(JdbcType("TIMESTAMP", java.sql.Types.TIMESTAMP))
       case DateType => Option(JdbcType("DATE", java.sql.Types.DATE))
       case t: TimeType =>
-        if (conf.legacyJdbcTimeAsTimestamp) {
-          // Legacy mode: treat TimeType as TIMESTAMP
-          Option(JdbcType("TIMESTAMP", java.sql.Types.TIMESTAMP))
-        } else {
+        if (conf.enforceStrictTimeType) {
           Option(JdbcType(s"TIME(${t.precision})", java.sql.Types.TIME))
+        } else {
+          // Non-strict mode (default): treat TimeType as TIMESTAMP
+          Option(JdbcType("TIMESTAMP", java.sql.Types.TIMESTAMP))
         }
       case t: DecimalType => Option(
         JdbcType(s"DECIMAL(${t.precision},${t.scale})", java.sql.Types.DECIMAL))
@@ -235,11 +235,8 @@ object JdbcUtils extends Logging with SQLConfHelper {
     case java.sql.Types.SQLXML => StringType
     case java.sql.Types.STRUCT => StringType
     case java.sql.Types.TIME =>
-      if (conf.legacyJdbcTimeAsTimestamp) {
-        // Legacy behavior: treat TIME as TIMESTAMP
-        getTimestampType(isTimestampNTZ)
-      } else {
-        // New behavior: treat TIME as TimeType with precision
+      if (conf.enforceStrictTimeType) {
+        // Strict mode: treat TIME as TimeType with precision
         val timePrecision = if (scale >= 0 && scale <= 6) {
           scale
         } else {
@@ -254,6 +251,9 @@ object JdbcUtils extends Logging with SQLConfHelper {
           }
         }
         TimeType(timePrecision)
+      } else {
+        // Non-strict mode (default): treat TIME as TimestampType
+        getTimestampType(isTimestampNTZ)
       }
     case java.sql.Types.TIMESTAMP => getTimestampType(isTimestampNTZ)
     case java.sql.Types.TINYINT => IntegerType
@@ -759,8 +759,17 @@ object JdbcUtils extends Logging with SQLConfHelper {
       }
 
     case _: TimeType =>
-      if (conf.legacyJdbcTimeAsTimestamp) {
-        // Legacy mode: treat TimeType as TimestampType
+      if (conf.enforceStrictTimeType) {
+        // Strict mode: use dialect-specific TIME writing for driver compatibility
+        (stmt: PreparedStatement, row: Row, pos: Int) =>
+          val time = row.getAs[java.time.LocalTime](pos)
+          if (time != null) {
+            dialect.writeTimeValue(stmt, pos + 1, time)
+          } else {
+            stmt.setNull(pos + 1, java.sql.Types.TIME)
+          }
+      } else {
+        // Non-strict mode (default): treat TimeType as TimestampType
         // Convert LocalTime to Timestamp at epoch date (1970-01-01)
         (stmt: PreparedStatement, row: Row, pos: Int) =>
           val time = row.getAs[java.time.LocalTime](pos)
@@ -770,15 +779,6 @@ object JdbcUtils extends Logging with SQLConfHelper {
             stmt.setTimestamp(pos + 1, timestamp)
           } else {
             stmt.setNull(pos + 1, java.sql.Types.TIMESTAMP)
-          }
-      } else {
-        // New mode: use dialect-specific TIME writing for driver compatibility
-        (stmt: PreparedStatement, row: Row, pos: Int) =>
-          val time = row.getAs[java.time.LocalTime](pos)
-          if (time != null) {
-            dialect.writeTimeValue(stmt, pos + 1, time)
-          } else {
-            stmt.setNull(pos + 1, java.sql.Types.TIME)
           }
       }
 

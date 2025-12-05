@@ -390,9 +390,9 @@ class MySQLOverMariaConnectorIntegrationSuite extends MySQLIntegrationSuite {
   test("TIME type with legacy flag (MySQL TIME(0-6))") {
     import java.time.LocalTime
 
-    Seq(false, true).foreach { legacyFlag =>
-      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
-        val tableName = if (legacyFlag) "test_time_legacy" else "test_time_new"
+    Seq(false, true).foreach { strictTimeType =>
+      withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> strictTimeType.toString) {
+        val tableName = if (strictTimeType) "test_time_legacy" else "test_time_new"
 
         withTable(tableName) {
           Using.resource(getConnection()) { conn =>
@@ -421,12 +421,12 @@ class MySQLOverMariaConnectorIntegrationSuite extends MySQLIntegrationSuite {
 
           val df = spark.read.jdbc(jdbcUrl, tableName, new Properties())
 
-          if (legacyFlag) {
+          if (!strictTimeType) {
             (0 to 6).foreach { p =>
               val colName = s"time_p$p"
               assert(df.schema(colName).dataType.isInstanceOf[TimestampType] ||
                 df.schema(colName).dataType.isInstanceOf[TimestampNTZType],
-                s"Expected TimestampType for $colName with flag=$legacyFlag")
+                s"Expected TimestampType for $colName with flag=$strictTimeType")
             }
 
             val rows = df.orderBy("id").collect()
@@ -437,7 +437,7 @@ class MySQLOverMariaConnectorIntegrationSuite extends MySQLIntegrationSuite {
             (0 to 6).foreach { p =>
               val colName = s"time_p$p"
               assert(df.schema(colName).dataType === TimeType(p),
-                s"Expected TimeType($p) for $colName with flag=$legacyFlag")
+                s"Expected TimeType($p) for $colName with flag=$strictTimeType")
             }
 
             val rows = df.orderBy("id").collect()
@@ -479,9 +479,9 @@ class MySQLOverMariaConnectorIntegrationSuite extends MySQLIntegrationSuite {
   test("TIME type write and read round-trip (MySQL TIME(0-6))") {
     import java.time.LocalTime
 
-    Seq(false, true).foreach { legacyFlag =>
-      withSQLConf(SQLConf.LEGACY_JDBC_TIME_AS_TIMESTAMP.key -> legacyFlag.toString) {
-        val tableName = s"test_time_roundtrip_${if (legacyFlag) "legacy" else "new"}"
+    Seq(false, true).foreach { strictTimeType =>
+      withSQLConf(SQLConf.ENFORCE_STRICT_TIME_TYPE.key -> strictTimeType.toString) {
+        val tableName = s"test_time_roundtrip_${if (strictTimeType) "legacy" else "new"}"
 
         withTable(tableName) {
           val writeData = Seq(
@@ -520,8 +520,8 @@ class MySQLOverMariaConnectorIntegrationSuite extends MySQLIntegrationSuite {
           val readDf = spark.read.jdbc(jdbcUrl, tableName, new Properties())
           val rows = readDf.orderBy("id").collect()
 
-          if (legacyFlag) {
-            // Legacy mode: reads as TimestampType with epoch date
+          if (!strictTimeType) {
+            // Non-strict mode: reads as TimestampType with epoch date
             (0 to 6).foreach { p =>
               val colName = s"time_p$p"
               assert(readDf.schema(colName).dataType.isInstanceOf[TimestampType] ||
@@ -532,7 +532,7 @@ class MySQLOverMariaConnectorIntegrationSuite extends MySQLIntegrationSuite {
             assert(ts0.toString.startsWith("1970-01-01 08:00:00"))
             (1 to 7).foreach { colIdx => assert(rows(2).isNullAt(colIdx)) }
           } else {
-            // New mode: reads as TimeType with correct precisions
+            // Strict mode: reads as TimeType with correct precisions
             (0 to 6).foreach { p =>
               val colName = s"time_p$p"
               assert(readDf.schema(colName).dataType === TimeType(p),

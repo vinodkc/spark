@@ -191,7 +191,7 @@ private case class MySQLDialect() extends JdbcDialect with SQLConfHelper with No
         // scalastyle:on line.size.limit
         Some(getTimestampType(md.build()))
       case Types.TIMESTAMP if !conf.legacyMySqlTimestampNTZMappingEnabled => Some(TimestampType)
-      case Types.TIME if !conf.legacyJdbcTimeAsTimestamp =>
+      case Types.TIME if conf.enforceStrictTimeType =>
         // MySQL JDBC driver encodes TIME fractional seconds precision in the precision field:
         // TIME(0) -> precision=10, TIME(1) -> precision=12, ..., TIME(6) -> precision=17
         // Formula: fractional seconds precision = precision - 11 (when precision > 10)

@@ -117,8 +117,12 @@ private case class DB2Dialect() extends JdbcDialect with SQLConfHelper with NoLe
       Option(JdbcType("CHAR(1)", java.sql.Types.CHAR))
     case BooleanType => Option(JdbcType("BOOLEAN", java.sql.Types.BOOLEAN))
     case ShortType | ByteType => Some(JdbcType("SMALLINT", java.sql.Types.SMALLINT))
-    case _: TimeType if !conf.legacyJdbcTimeAsTimestamp =>
+    case _: TimeType if conf.enforceStrictTimeType =>
+      // Strict mode: Always use TIME (DB2 TIME only supports seconds precision)
+      // Note: Fractional seconds will be truncated as DB2 TIME doesn't support precision
       Some(JdbcType("TIME", java.sql.Types.TIME))
+    // Non-strict mode (default): falls back to JdbcUtils.getCommonJDBCType
+    // which maps TimeType -> TIMESTAMP
     case _ => None
   }
 

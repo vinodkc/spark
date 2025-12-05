@@ -123,7 +123,7 @@ private case class PostgresDialect()
          "interval" | "pg_snapshot" =>
       Some(StringType)
     case "bytea" => Some(BinaryType)
-    case "time" if !conf.legacyJdbcTimeAsTimestamp =>
+    case "time" if conf.enforceStrictTimeType =>
       val scale = md.build().getLong("scale").toInt
       val timePrecision = if (scale >= 0 && scale <= 6) scale else 6
       Some(TimeType(timePrecision))
