@@ -760,41 +760,103 @@ case class RegExpReplace(subject: Expression, regexp: Expression, rep: Expressio
       ""
     }
 
-    nullSafeCodeGen(ctx, ev, (subject, regexp, rep, pos) => {
-    s"""
-      ${RegExpUtils.initLastMatcherCode(ctx, subject, regexp, matcher, prettyName, collationId)}
-      if (!$rep.equals($termLastReplacementInUTF8)) {
-        // replacement string changed
-        $termLastReplacementInUTF8 = $rep.clone();
-        $termLastReplacement = $termLastReplacementInUTF8.toString();
-      }
-      String $source = $subject.toString();
-      int $position = $pos - 1;
-      if ($position == 0 || $position < $source.length()) {
-        $classNameStringBuilder $termResult = new $classNameStringBuilder();
-        $matcher.region($position, $source.length());
+    if (regexp.foldable) {
+      val regexpVal = regexp.eval()
+      if (regexpVal != null) {
+        val regexStr =
+          StringEscapeUtils.escapeJava(regexpVal.asInstanceOf[UTF8String].toString())
+        val flags = CollationSupport.collationAwareRegexFlags(collationId)
+        val patternClass = classOf[Pattern].getName
+        val pattern = ctx.addMutableState(patternClass, "regexpReplacePattern",
+          v => s"""$v = $patternClass.compile("$regexStr", $flags);""")
 
-        while ($matcher.find()) {
-          try {
-            $matcher.appendReplacement($termResult, $termLastReplacement);
-          } catch (Throwable e) {
-            if (scala.util.control.NonFatal.apply(e)) {
-              throw QueryExecutionErrors.invalidRegexpReplaceError($source, $regexp.toString(),
-                $rep.toString(), $pos, e);
+        val subjectCode = subject.genCode(ctx)
+        val repCode = rep.genCode(ctx)
+        val posCode = pos.genCode(ctx)
+
+        ev.copy(code = code"""
+          ${subjectCode.code}
+          ${repCode.code}
+          ${posCode.code}
+          boolean ${ev.isNull} =
+            ${subjectCode.isNull} || ${repCode.isNull} || ${posCode.isNull};
+          ${CodeGenerator.javaType(dataType)} ${ev.value} = ${CodeGenerator.defaultValue(dataType)};
+          if (!${ev.isNull}) {
+            if (!${repCode.value}.equals($termLastReplacementInUTF8)) {
+              $termLastReplacementInUTF8 = ${repCode.value}.clone();
+              $termLastReplacement = $termLastReplacementInUTF8.toString();
+            }
+            String $source = ${subjectCode.value}.toString();
+            int $position = ${posCode.value} - 1;
+            if ($position == 0 || $position < $source.length()) {
+              $classNameStringBuilder $termResult = new $classNameStringBuilder();
+              java.util.regex.Matcher $matcher = $pattern.matcher($source);
+              $matcher.region($position, $source.length());
+
+              while ($matcher.find()) {
+                try {
+                  $matcher.appendReplacement($termResult, $termLastReplacement);
+                } catch (Throwable e) {
+                  if (scala.util.control.NonFatal.apply(e)) {
+                    throw QueryExecutionErrors.invalidRegexpReplaceError(
+                      $source, "$regexStr", ${repCode.value}.toString(), ${posCode.value}, e);
+                  } else {
+                    throw e;
+                  }
+                }
+              }
+              $matcher.appendTail($termResult);
+              ${ev.value} = UTF8String.fromString($termResult.toString());
+              $termResult = null;
             } else {
-              throw e;
+              ${ev.value} = ${subjectCode.value};
+            }
+            $setEvNotNull
+          }
+        """)
+      } else {
+        ev.copy(code = code"""
+          boolean ${ev.isNull} = true;
+          ${CodeGenerator.javaType(dataType)} ${ev.value} = ${CodeGenerator.defaultValue(dataType)};
+        """)
+      }
+    } else {
+      nullSafeCodeGen(ctx, ev, (subject, regexp, rep, pos) => {
+      s"""
+        ${RegExpUtils.initLastMatcherCode(ctx, subject, regexp, matcher, prettyName, collationId)}
+        if (!$rep.equals($termLastReplacementInUTF8)) {
+          // replacement string changed
+          $termLastReplacementInUTF8 = $rep.clone();
+          $termLastReplacement = $termLastReplacementInUTF8.toString();
+        }
+        String $source = $subject.toString();
+        int $position = $pos - 1;
+        if ($position == 0 || $position < $source.length()) {
+          $classNameStringBuilder $termResult = new $classNameStringBuilder();
+          $matcher.region($position, $source.length());
+
+          while ($matcher.find()) {
+            try {
+              $matcher.appendReplacement($termResult, $termLastReplacement);
+            } catch (Throwable e) {
+              if (scala.util.control.NonFatal.apply(e)) {
+                throw QueryExecutionErrors.invalidRegexpReplaceError($source, $regexp.toString(),
+                  $rep.toString(), $pos, e);
+              } else {
+                throw e;
+              }
             }
           }
+          $matcher.appendTail($termResult);
+          ${ev.value} = UTF8String.fromString($termResult.toString());
+          $termResult = null;
+        } else {
+          ${ev.value} = $subject;
         }
-        $matcher.appendTail($termResult);
-        ${ev.value} = UTF8String.fromString($termResult.toString());
-        $termResult = null;
-      } else {
-        ${ev.value} = $subject;
-      }
-      $setEvNotNull
-    """
-    })
+        $setEvNotNull
+      """
+      })
+    }
   }
 
   override def first: Expression = subject
@@ -922,29 +984,79 @@ case class RegExpExtract(subject: Expression, regexp: Expression, idx: Expressio
     val classNameRegExpExtractBase = classOf[RegExpExtractBase].getCanonicalName
     val matcher = ctx.freshName("matcher")
     val matchResult = ctx.freshName("matchResult")
+    val patternClass = classOf[Pattern].getName
     val setEvNotNull = if (nullable) {
       s"${ev.isNull} = false;"
     } else {
       ""
     }
 
-    nullSafeCodeGen(ctx, ev, (subject, regexp, idx) => {
-      s"""
-      ${RegExpUtils.initLastMatcherCode(ctx, subject, regexp, matcher, prettyName, collationId)}
-      if ($matcher.find()) {
-        java.util.regex.MatchResult $matchResult = $matcher.toMatchResult();
-        $classNameRegExpExtractBase.checkGroupIndex("$prettyName", $matchResult.groupCount(), $idx);
-        if ($matchResult.group($idx) == null) {
-          ${ev.value} = UTF8String.EMPTY_UTF8;
-        } else {
-          ${ev.value} = UTF8String.fromString($matchResult.group($idx));
-        }
-        $setEvNotNull
+    if (regexp.foldable) {
+      val regexpVal = regexp.eval()
+      if (regexpVal != null) {
+        val regexStr = StringEscapeUtils.escapeJava(regexpVal.asInstanceOf[UTF8String].toString())
+        val flags = CollationSupport.collationAwareRegexFlags(collationId)
+        val pattern = ctx.addMutableState(patternClass, "regexpExtractPattern",
+          v => s"""
+            |try {
+            |  $v = $patternClass.compile("$regexStr", $flags);
+            |} catch (java.util.regex.PatternSyntaxException e) {
+            |  throw QueryExecutionErrors.invalidPatternError("$prettyName", e.getPattern(), e);
+            |}
+            |""".stripMargin)
+
+        val subjectCode = subject.genCode(ctx)
+        val idxCode = idx.genCode(ctx)
+
+        ev.copy(code = code"""
+          ${subjectCode.code}
+          ${idxCode.code}
+          boolean ${ev.isNull} = ${subjectCode.isNull} || ${idxCode.isNull};
+          ${CodeGenerator.javaType(dataType)} ${ev.value} = ${CodeGenerator.defaultValue(dataType)};
+          if (!${ev.isNull}) {
+            java.util.regex.Matcher $matcher = $pattern.matcher(${subjectCode.value}.toString());
+            if ($matcher.find()) {
+              java.util.regex.MatchResult $matchResult = $matcher.toMatchResult();
+              $classNameRegExpExtractBase.checkGroupIndex(
+                "$prettyName", $matchResult.groupCount(), ${idxCode.value});
+              if ($matchResult.group(${idxCode.value}) == null) {
+                ${ev.value} = UTF8String.EMPTY_UTF8;
+              } else {
+                ${ev.value} = UTF8String.fromString($matchResult.group(${idxCode.value}));
+              }
+              $setEvNotNull
+            } else {
+              ${ev.value} = UTF8String.EMPTY_UTF8;
+              $setEvNotNull
+            }
+          }
+        """)
       } else {
-        ${ev.value} = UTF8String.EMPTY_UTF8;
-        $setEvNotNull
-      }"""
-    })
+        ev.copy(code = code"""
+          boolean ${ev.isNull} = true;
+          ${CodeGenerator.javaType(dataType)} ${ev.value} = ${CodeGenerator.defaultValue(dataType)};
+        """)
+      }
+    } else {
+      nullSafeCodeGen(ctx, ev, (subject, regexp, idx) => {
+        s"""
+        ${RegExpUtils.initLastMatcherCode(ctx, subject, regexp, matcher, prettyName, collationId)}
+        if ($matcher.find()) {
+          java.util.regex.MatchResult $matchResult = $matcher.toMatchResult();
+          $classNameRegExpExtractBase.checkGroupIndex(
+            "$prettyName", $matchResult.groupCount(), $idx);
+          if ($matchResult.group($idx) == null) {
+            ${ev.value} = UTF8String.EMPTY_UTF8;
+          } else {
+            ${ev.value} = UTF8String.fromString($matchResult.group($idx));
+          }
+          $setEvNotNull
+        } else {
+          ${ev.value} = UTF8String.EMPTY_UTF8;
+          $setEvNotNull
+        }"""
+      })
+    }
   }
 
   override protected def withNewChildrenInternal(
@@ -1028,28 +1140,75 @@ case class RegExpExtractAll(subject: Expression, regexp: Expression, idx: Expres
     } else {
       ""
     }
-    nullSafeCodeGen(ctx, ev, (subject, regexp, idx) => {
-      s"""
-         | ${RegExpUtils.initLastMatcherCode(ctx, subject, regexp, matcher, prettyName,
-        collationId)}
-         | java.util.ArrayList $matchResults = new java.util.ArrayList<UTF8String>();
-         | while ($matcher.find()) {
-         |   java.util.regex.MatchResult $matchResult = $matcher.toMatchResult();
-         |   $classNameRegExpExtractBase.checkGroupIndex(
-         |     "$prettyName",
-         |     $matchResult.groupCount(),
-         |     $idx);
-         |   if ($matchResult.group($idx) == null) {
-         |     $matchResults.add(UTF8String.EMPTY_UTF8);
-         |   } else {
-         |     $matchResults.add(UTF8String.fromString($matchResult.group($idx)));
-         |   }
-         | }
-         | ${ev.value} =
-         |   new $arrayClass($matchResults.toArray(new UTF8String[$matchResults.size()]));
-         | $setEvNotNull
-         """
-    })
+
+    if (regexp.foldable) {
+      val regexpVal = regexp.eval()
+      if (regexpVal != null) {
+        val regexStr =
+          StringEscapeUtils.escapeJava(regexpVal.asInstanceOf[UTF8String].toString())
+        val flags = CollationSupport.collationAwareRegexFlags(collationId)
+        val patternClass = classOf[Pattern].getName
+        val pattern = ctx.addMutableState(patternClass, "regexpExtractAllPattern",
+          v => s"""$v = $patternClass.compile("$regexStr", $flags);""")
+
+        val subjectCode = subject.genCode(ctx)
+        val idxCode = idx.genCode(ctx)
+
+        ev.copy(code = code"""
+          ${subjectCode.code}
+          ${idxCode.code}
+          boolean ${ev.isNull} = ${subjectCode.isNull} || ${idxCode.isNull};
+          ${CodeGenerator.javaType(dataType)} ${ev.value} = ${CodeGenerator.defaultValue(dataType)};
+          if (!${ev.isNull}) {
+            java.util.regex.Matcher $matcher = $pattern.matcher(${subjectCode.value}.toString());
+            java.util.ArrayList $matchResults = new java.util.ArrayList<UTF8String>();
+            while ($matcher.find()) {
+              java.util.regex.MatchResult $matchResult = $matcher.toMatchResult();
+              $classNameRegExpExtractBase.checkGroupIndex(
+                "$prettyName",
+                $matchResult.groupCount(),
+                ${idxCode.value});
+              if ($matchResult.group(${idxCode.value}) == null) {
+                $matchResults.add(UTF8String.EMPTY_UTF8);
+              } else {
+                $matchResults.add(UTF8String.fromString($matchResult.group(${idxCode.value})));
+              }
+            }
+            ${ev.value} =
+              new $arrayClass($matchResults.toArray(new UTF8String[$matchResults.size()]));
+            $setEvNotNull
+          }
+        """)
+      } else {
+        ev.copy(code = code"""
+          boolean ${ev.isNull} = true;
+          ${CodeGenerator.javaType(dataType)} ${ev.value} = ${CodeGenerator.defaultValue(dataType)};
+        """)
+      }
+    } else {
+      nullSafeCodeGen(ctx, ev, (subject, regexp, idx) => {
+        s"""
+           | ${RegExpUtils.initLastMatcherCode(ctx, subject, regexp, matcher, prettyName,
+          collationId)}
+           | java.util.ArrayList $matchResults = new java.util.ArrayList<UTF8String>();
+           | while ($matcher.find()) {
+           |   java.util.regex.MatchResult $matchResult = $matcher.toMatchResult();
+           |   $classNameRegExpExtractBase.checkGroupIndex(
+           |     "$prettyName",
+           |     $matchResult.groupCount(),
+           |     $idx);
+           |   if ($matchResult.group($idx) == null) {
+           |     $matchResults.add(UTF8String.EMPTY_UTF8);
+           |   } else {
+           |     $matchResults.add(UTF8String.fromString($matchResult.group($idx)));
+           |   }
+           | }
+           | ${ev.value} =
+           |   new $arrayClass($matchResults.toArray(new UTF8String[$matchResults.size()]));
+           | $setEvNotNull
+           """
+      })
+    }
   }
 
   override protected def withNewChildrenInternal(
@@ -1193,22 +1352,62 @@ case class RegExpInStr(subject: Expression, regexp: Expression, idx: Expression)
       ""
     }
 
-    nullSafeCodeGen(ctx, ev, (subject, regexp, _) => {
-      s"""
-         |try {
-         |  $setEvNotNull
-         |  ${RegExpUtils.initLastMatcherCode(ctx, subject, regexp, matcher, prettyName,
-        collationId)}
-         |  if ($matcher.find()) {
-         |    ${ev.value} = $matcher.toMatchResult().start() + 1;
-         |  } else {
-         |    ${ev.value} = 0;
-         |  }
-         |} catch (IllegalStateException e) {
-         |  ${ev.value} = 0;
-         |}
-         |""".stripMargin
-    })
+    if (regexp.foldable) {
+      val regexpVal = regexp.eval()
+      if (regexpVal != null) {
+        val regexStr =
+          StringEscapeUtils.escapeJava(regexpVal.asInstanceOf[UTF8String].toString())
+        val flags = CollationSupport.collationAwareRegexFlags(collationId)
+        val patternClass = classOf[Pattern].getName
+        val pattern = ctx.addMutableState(patternClass, "regexpInstrPattern",
+          v => s"""$v = $patternClass.compile("$regexStr", $flags);""")
+
+        val subjectCode = subject.genCode(ctx)
+        val idxCode = idx.genCode(ctx)
+
+        ev.copy(code = code"""
+          ${subjectCode.code}
+          ${idxCode.code}
+          boolean ${ev.isNull} = ${subjectCode.isNull} || ${idxCode.isNull};
+          ${CodeGenerator.javaType(dataType)} ${ev.value} = ${CodeGenerator.defaultValue(dataType)};
+          if (!${ev.isNull}) {
+            try {
+              $setEvNotNull
+              java.util.regex.Matcher $matcher = $pattern.matcher(${subjectCode.value}.toString());
+              if ($matcher.find()) {
+                ${ev.value} = $matcher.toMatchResult().start() + 1;
+              } else {
+                ${ev.value} = 0;
+              }
+            } catch (IllegalStateException e) {
+              ${ev.value} = 0;
+            }
+          }
+        """)
+      } else {
+        ev.copy(code = code"""
+          boolean ${ev.isNull} = true;
+          ${CodeGenerator.javaType(dataType)} ${ev.value} = ${CodeGenerator.defaultValue(dataType)};
+        """)
+      }
+    } else {
+      nullSafeCodeGen(ctx, ev, (subject, regexp, _) => {
+        s"""
+           |try {
+           |  $setEvNotNull
+           |  ${RegExpUtils.initLastMatcherCode(ctx, subject, regexp, matcher, prettyName,
+          collationId)}
+           |  if ($matcher.find()) {
+           |    ${ev.value} = $matcher.toMatchResult().start() + 1;
+           |  } else {
+           |    ${ev.value} = 0;
+           |  }
+           |} catch (IllegalStateException e) {
+           |  ${ev.value} = 0;
+           |}
+           |""".stripMargin
+      })
+    }
   }
 
   override protected def withNewChildrenInternal(
