@@ -13149,15 +13149,15 @@ def timestamp_bucket(
 
     Examples
     --------
-    Example 1: Hourly bucketing with TIMESTAMP
+    Example 1: Basic hourly bucketing (using default origin)
 
+    >>> import datetime
     >>> from pyspark.sql import functions as sf
     >>> df = spark.createDataFrame([
-    ...     (1, '2024-12-04 14:30:00'),
-    ...     (2, '2024-12-04 15:45:00'),
-    ...     (3, '2024-12-04 16:20:00')
+    ...     (1, datetime.datetime(2024, 12, 4, 14, 30, 0)),
+    ...     (2, datetime.datetime(2024, 12, 4, 15, 45, 0)),
+    ...     (3, datetime.datetime(2024, 12, 4, 16, 20, 0))
     ... ], ['id', 'ts'])
-    >>> df = df.withColumn("ts", sf.to_timestamp(df.ts))
     >>> df.select(
     ...     sf.timestamp_bucket(sf.expr("INTERVAL '1' HOUR"), df.ts).alias("hour")
     ... ).show()
@@ -13169,26 +13169,7 @@ def timestamp_bucket(
     |2024-12-04 16:00:00|
     +-------------------+
 
-    Example 2: Weekly bucketing with DATE
-
-    >>> df_dates = spark.createDataFrame([
-    ...     (1, '2024-12-01'),
-    ...     (2, '2024-12-08'),
-    ...     (3, '2024-12-15')
-    ... ], ['id', 'd'])
-    >>> df_dates = df_dates.withColumn("d", sf.to_date(df_dates.d))
-    >>> df_dates.select(
-    ...     sf.timestamp_bucket(sf.expr("INTERVAL '7' DAY"), df_dates.d).alias("week")
-    ... ).show()
-    +-------------------+
-    |               week|
-    +-------------------+
-    |2024-11-28 00:00:00|
-    |2024-12-05 00:00:00|
-    |2024-12-12 00:00:00|
-    +-------------------+
-
-    Example 3: Aggregation with 15-minute buckets
+    Example 2: Aggregation with 15-minute buckets
 
     >>> df.groupBy(
     ...     sf.timestamp_bucket(sf.expr("INTERVAL '15' MINUTE"), df.ts).alias("interval")
@@ -13201,14 +13182,16 @@ def timestamp_bucket(
     |2024-12-04 16:15:00|    1|
     +-------------------+-----+
 
-    Example 4: Weekly bucketing with Monday alignment (custom origin)
+    Example 3: Custom origin for Monday-aligned weeks
 
+    1970-01-05 was a Monday, so using it as origin aligns buckets to Mondays:
+
+    >>> import datetime
     >>> df_dates = spark.createDataFrame([
-    ...     (1, '2024-12-01'),
-    ...     (2, '2024-12-04'),
-    ...     (3, '2024-12-09')
+    ...     (1, datetime.date(2024, 12, 1)),   # Sunday
+    ...     (2, datetime.date(2024, 12, 4)),   # Wednesday
+    ...     (3, datetime.date(2024, 12, 9))    # Monday
     ... ], ['id', 'd'])
-    >>> df_dates = df_dates.withColumn("d", sf.to_date(df_dates.d))
     >>> df_dates.select(
     ...     sf.timestamp_bucket(
     ...         sf.expr("INTERVAL '7' DAY"),
@@ -13222,6 +13205,28 @@ def timestamp_bucket(
     |2024-11-25 00:00:00|
     |2024-12-02 00:00:00|
     |2024-12-09 00:00:00|
+    +-------------------+
+
+    Example 4: Custom origin for fiscal year bucketing
+
+    >>> df_sales = spark.createDataFrame([
+    ...     (1, datetime.date(2024, 3, 15)),
+    ...     (2, datetime.date(2024, 5, 20)),
+    ...     (3, datetime.date(2024, 7, 10))
+    ... ], ['id', 'sale_date'])
+    >>> df_sales.select(
+    ...     sf.timestamp_bucket(
+    ...         sf.expr("INTERVAL '3' MONTH"),
+    ...         df_sales.sale_date,
+    ...         sf.expr("TIMESTAMP'2024-04-01 00:00:00'")  # Fiscal year start
+    ...     ).alias("quarter")
+    ... ).show()  # doctest: +SKIP
+    +-------------------+
+    |            quarter|
+    +-------------------+
+    |2024-01-01 00:00:00|
+    |2024-04-01 00:00:00|
+    |2024-07-01 00:00:00|
     +-------------------+
     """
     from pyspark.sql.classic.column import _to_java_column
