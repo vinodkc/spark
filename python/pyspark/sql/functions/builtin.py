@@ -13186,15 +13186,15 @@ def timestamp_bucket(
 
     >>> import datetime
     >>> df_dates = spark.createDataFrame([
-    ...     (1, datetime.date(2024, 12, 1)),   # Sunday
-    ...     (2, datetime.date(2024, 12, 4)),   # Wednesday
-    ...     (3, datetime.date(2024, 12, 9))    # Monday
-    ... ], ['id', 'd'])
+    ...     (1, datetime.datetime(2024, 12, 1)),   # Sunday
+    ...     (2, datetime.datetime(2024, 12, 4)),   # Wednesday
+    ...     (3, datetime.datetime(2024, 12, 9))    # Monday
+    ... ], ['id', 'ts'])
     >>> df_dates.select(
     ...     sf.timestamp_bucket(
     ...         sf.expr("INTERVAL '7' DAY"),
-    ...         df_dates.d,
-    ...         sf.expr("TIMESTAMP'1970-01-05 00:00:00'")  # Monday origin
+    ...         df_dates.ts,
+    ...         sf.lit(datetime.datetime(1970, 1, 5))  # Monday origin
     ...     ).alias("monday_week")
     ... ).show()
     +-------------------+
@@ -13205,26 +13205,25 @@ def timestamp_bucket(
     |2024-12-09 00:00:00|
     +-------------------+
 
-    Example 4: Custom origin for fiscal year bucketing
+    Example 4: Using with TIMESTAMP_NTZ (no timezone)
 
-    >>> df_sales = spark.createDataFrame([
-    ...     (1, datetime.date(2024, 3, 15)),
-    ...     (2, datetime.date(2024, 5, 20)),
-    ...     (3, datetime.date(2024, 7, 10))
-    ... ], ['id', 'sale_date'])
-    >>> df_sales.select(
+    >>> df_ntz = spark.createDataFrame([
+    ...     (1, datetime.datetime(2024, 12, 4, 14, 30, 0)),
+    ...     (2, datetime.datetime(2024, 12, 4, 15, 45, 0))
+    ... ], ['id', 'ts'])
+    >>> df_ntz = df_ntz.selectExpr("id", "CAST(ts AS TIMESTAMP_NTZ) AS ts_ntz")
+    >>> df_ntz.select(
     ...     sf.timestamp_bucket(
-    ...         sf.expr("INTERVAL '3' MONTH"),
-    ...         df_sales.sale_date,
-    ...         sf.expr("TIMESTAMP'2024-04-01 00:00:00'")  # Fiscal year start
-    ...     ).alias("quarter")
-    ... ).show()  # doctest: +SKIP
+    ...         sf.expr("INTERVAL '1' HOUR"),
+    ...         df_ntz.ts_ntz,
+    ...         sf.lit(datetime.datetime(2024, 12, 4))
+    ...     ).alias("hour")
+    ... ).show()
     +-------------------+
-    |            quarter|
+    |               hour|
     +-------------------+
-    |2024-01-01 00:00:00|
-    |2024-04-01 00:00:00|
-    |2024-07-01 00:00:00|
+    |2024-12-04 14:00:00|
+    |2024-12-04 15:00:00|
     +-------------------+
     """
     if origin is None:
