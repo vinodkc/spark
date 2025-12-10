@@ -2612,7 +2612,6 @@ case class TimestampBucket(
           )
         }
 
-        // Validate origin is foldable (constant expression)
         if (!originTimestamp.foldable) {
           return DataTypeMismatch(
             errorSubClass = "NON_FOLDABLE_INPUT",
@@ -2624,7 +2623,6 @@ case class TimestampBucket(
           )
         }
 
-        // Validate bucket_width value
         val widthValue = bucketWidth.eval()
         if (widthValue != null) {
           val widthMicros = widthValue.asInstanceOf[Long]
@@ -2652,22 +2650,15 @@ case class TimestampBucket(
       originValue: Any): Any = {
     val bucketMicros = bucketWidthValue.asInstanceOf[Long]
 
-    // Handle both DATE (Int days) and TIMESTAMP/TIMESTAMP_NTZ (Long micros)
     val timestampMicros = timestampValue match {
-      case days: Int => days.toLong * MICROS_PER_DAY  // DATE to TIMESTAMP conversion
-      case micros: Long => micros                      // Already in microseconds
+      case days: Int => days.toLong * MICROS_PER_DAY
+      case micros: Long => micros
     }
 
     val originMicros = originValue.asInstanceOf[Long]
-
-    // Shift timestamp relative to origin
     val shiftedTimestamp = timestampMicros - originMicros
-
-    // Calculate bucket index using floor division
-    // Math.floorDiv handles negative offsets correctly
     val bucketIndex = Math.floorDiv(shiftedTimestamp, bucketMicros)
 
-    // Calculate bucket start and shift back to absolute time
     originMicros + (bucketIndex * bucketMicros)
   }
 
