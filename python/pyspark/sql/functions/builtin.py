@@ -13227,8 +13227,6 @@ def timestamp_bucket(
     |2024-07-01 00:00:00|
     +-------------------+
     """
-    from pyspark.sql.classic.column import _to_java_column
-
     if origin is None:
         return _invoke_function_over_columns("timestamp_bucket", bucket_width, timestamp)
     else:
