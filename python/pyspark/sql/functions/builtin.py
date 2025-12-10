@@ -13093,9 +13093,7 @@ def timestamp_add(unit: str, quantity: "ColumnOrName", ts: "ColumnOrName") -> Co
 
 @_try_remote_functions
 def timestamp_bucket(
-    bucket_width: "ColumnOrName",
-    timestamp: "ColumnOrName",
-    origin: Optional["ColumnOrName"] = None
+    bucket_width: "ColumnOrName", timestamp: "ColumnOrName", origin: Optional["ColumnOrName"] = None
 ) -> Column:
     """
     Returns the start of the timestamp bucket containing the input timestamp.

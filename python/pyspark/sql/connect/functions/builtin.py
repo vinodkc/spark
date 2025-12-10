@@ -3693,9 +3693,7 @@ timestamp_add.__doc__ = pysparkfuncs.timestamp_add.__doc__
 
 
 def timestamp_bucket(
-    bucket_width: "ColumnOrName",
-    timestamp: "ColumnOrName",
-    origin: Optional["ColumnOrName"] = None
+    bucket_width: "ColumnOrName", timestamp: "ColumnOrName", origin: Optional["ColumnOrName"] = None
 ) -> Column:
     if origin is None:
         return _invoke_function_over_columns("timestamp_bucket", bucket_width, timestamp)
