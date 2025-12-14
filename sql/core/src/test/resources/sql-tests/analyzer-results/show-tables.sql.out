@@ -190,6 +190,54 @@ org.apache.spark.sql.catalyst.analysis.NoSuchPartitionException
 
 
 -- !query
+SHOW TABLES AS JSON
+-- !query analysis
+ShowTablesJsonCommand showdb, [namespace#x]
+
+
+-- !query
+SHOW TABLES IN showdb AS JSON
+-- !query analysis
+ShowTablesJsonCommand showdb, [namespace#x]
+
+
+-- !query
+SHOW TABLES 'show_t*' AS JSON
+-- !query analysis
+ShowTablesJsonCommand showdb, show_t*, [namespace#x]
+
+
+-- !query
+SHOW TABLES LIKE 'show_t1*|show_t2*' AS JSON
+-- !query analysis
+ShowTablesJsonCommand showdb, show_t1*|show_t2*, [namespace#x]
+
+
+-- !query
+SHOW TABLES IN showdb 'show_t*' AS JSON
+-- !query analysis
+ShowTablesJsonCommand showdb, show_t*, [namespace#x]
+
+
+-- !query
+SHOW TABLES IN showdb LIKE 'show_t*' AS JSON
+-- !query analysis
+ShowTablesJsonCommand showdb, show_t*, [namespace#x]
+
+
+-- !query
+SHOW TABLE EXTENDED LIKE 'show_t*' AS JSON
+-- !query analysis
+ShowTablesExtendedJsonCommand showdb, show_t*, [namespace#x]
+
+
+-- !query
+SHOW TABLE EXTENDED LIKE 'show_t1' PARTITION(c='Us', d=1) AS JSON
+-- !query analysis
+ShowTablesExtendedJsonCommand showdb, show_t1, Map(c -> Us, d -> 1), [namespace#x]
+
+
+-- !query
 DROP TABLE show_t1
 -- !query analysis
 DropTable false, false

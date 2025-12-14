@@ -275,6 +275,70 @@ org.apache.spark.sql.catalyst.analysis.NoSuchPartitionException
 
 
 -- !query
+SHOW TABLES AS JSON
+-- !query schema
+struct<namespace:string>
+-- !query output
+{"tables":[{"namespace":"showdb","name":"show_t1","isTemporary":false},{"namespace":"showdb","name":"show_t2","isTemporary":false},{"namespace":"","name":"show_t3","isTemporary":true}]}
+
+
+-- !query
+SHOW TABLES IN showdb AS JSON
+-- !query schema
+struct<namespace:string>
+-- !query output
+{"tables":[{"namespace":"showdb","name":"show_t1","isTemporary":false},{"namespace":"showdb","name":"show_t2","isTemporary":false},{"namespace":"","name":"show_t3","isTemporary":true}]}
+
+
+-- !query
+SHOW TABLES 'show_t*' AS JSON
+-- !query schema
+struct<namespace:string>
+-- !query output
+{"tables":[{"namespace":"showdb","name":"show_t1","isTemporary":false},{"namespace":"showdb","name":"show_t2","isTemporary":false},{"namespace":"","name":"show_t3","isTemporary":true}]}
+
+
+-- !query
+SHOW TABLES LIKE 'show_t1*|show_t2*' AS JSON
+-- !query schema
+struct<namespace:string>
+-- !query output
+{"tables":[{"namespace":"showdb","name":"show_t1","isTemporary":false},{"namespace":"showdb","name":"show_t2","isTemporary":false}]}
+
+
+-- !query
+SHOW TABLES IN showdb 'show_t*' AS JSON
+-- !query schema
+struct<namespace:string>
+-- !query output
+{"tables":[{"namespace":"showdb","name":"show_t1","isTemporary":false},{"namespace":"showdb","name":"show_t2","isTemporary":false},{"namespace":"","name":"show_t3","isTemporary":true}]}
+
+
+-- !query
+SHOW TABLES IN showdb LIKE 'show_t*' AS JSON
+-- !query schema
+struct<namespace:string>
+-- !query output
+{"tables":[{"namespace":"showdb","name":"show_t1","isTemporary":false},{"namespace":"showdb","name":"show_t2","isTemporary":false},{"namespace":"","name":"show_t3","isTemporary":true}]}
+
+
+-- !query
+SHOW TABLE EXTENDED LIKE 'show_t*' AS JSON
+-- !query schema
+struct<namespace:string>
+-- !query output
+{"tables":[{"namespace":"showdb","name":"show_t1","isTemporary":false,"catalog":"spark_catalog","database":"showdb","table":"show_t1","created_time [not included in comparison]":"None","last_access [not included in comparison]":"None","created_by [not included in comparison]":"None","type":"MANAGED","provider":"parquet","location":"file:[not included in comparison]/{warehouse_dir}/showdb.db/show_t1","partition_provider":"Catalog","partition_columns":["c","d"],"schema":"root\n |-- a: string (nullable = true)\n |-- b: integer (nullable = true)\n |-- c: string (nullable = true)\n |-- d: string (nullable = true)\n"},{"namespace":"showdb","name":"show_t2","isTemporary":false,"catalog":"spark_catalog","database":"showdb","table":"show_t2","created_time [not included in comparison]":"None","last_access [not included in comparison]":"None","created_by [not included in comparison]":"None","type":"MANAGED","provider":"parquet","location":"file:[not included in comparison]/{warehouse_dir}/showdb.db/show_t2","schema":"root\n |-- b: string (nullable = true)\n |-- d: integer (nullable = true)\n"},{"namespace":"","name":"show_t3","isTemporary":true}]}
+
+
+-- !query
+SHOW TABLE EXTENDED LIKE 'show_t1' PARTITION(c='Us', d=1) AS JSON
+-- !query schema
+struct<namespace:string>
+-- !query output
+{"tables":[{"namespace":"showdb","name":"show_t1","isTemporary":false,"partition_values":{"c":"Us","d":"1"},"location":"file:[not included in comparison]/{warehouse_dir}/showdb.db/show_t1/c=Us/d=1","created_time [not included in comparison]":"None","last_access [not included in comparison]":"None"}]}
+
+
+-- !query
 DROP TABLE show_t1
 -- !query schema
 struct<>

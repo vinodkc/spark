@@ -1256,6 +1256,42 @@ object ShowTablesUtils {
 }
 
 /**
+ * The logical plan of the SHOW TABLES ... AS JSON command.
+ */
+case class ShowTablesJson(
+    namespace: LogicalPlan,
+    pattern: Option[String],
+    override val output: Seq[Attribute] = ShowTablesJson.getOutputAttrs) extends UnaryCommand {
+  override def child: LogicalPlan = namespace
+  override protected def withNewChildInternal(newChild: LogicalPlan): ShowTablesJson =
+    copy(namespace = newChild)
+}
+
+object ShowTablesJson {
+  def getOutputAttrs: Seq[Attribute] = Seq(
+    AttributeReference("namespace", StringType, nullable = false)())
+}
+
+/**
+ * The logical plan of the SHOW TABLE EXTENDED ... AS JSON command.
+ */
+case class ShowTablesExtendedJson(
+    namespace: LogicalPlan,
+    pattern: String,
+    partitionSpec: Option[PartitionSpec] = None,
+    override val output: Seq[Attribute] = ShowTablesExtendedJson.getOutputAttrs)
+  extends UnaryCommand {
+  override def child: LogicalPlan = namespace
+  override protected def withNewChildInternal(newChild: LogicalPlan): ShowTablesExtendedJson =
+    copy(namespace = newChild, partitionSpec = partitionSpec)
+}
+
+object ShowTablesExtendedJson {
+  def getOutputAttrs: Seq[Attribute] = Seq(
+    AttributeReference("namespace", StringType, nullable = false)())
+}
+
+/**
  * The logical plan of the SHOW TABLE EXTENDED ... PARTITION ... command.
  */
 case class ShowTablePartition(

@@ -18,6 +18,8 @@
 package org.apache.spark.sql.execution.command
 
 import java.net.{URI, URISyntaxException}
+import java.time.ZoneOffset
+import java.util.Locale
 
 import scala.collection.mutable.ArrayBuffer
 import scala.jdk.CollectionConverters._
@@ -25,6 +27,9 @@ import scala.util.control.NonFatal
 
 import org.apache.hadoop.fs.{FileContext, FsConstants, Path}
 import org.apache.hadoop.fs.permission.{AclEntry, AclEntryScope, AclEntryType, FsAction, FsPermission}
+import org.json4s._
+import org.json4s.JsonAST.JObject
+import org.json4s.jackson.JsonMethods._
 
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.catalyst.{SQLConfHelper, TableIdentifier}
@@ -35,7 +40,7 @@ import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.DescribeCommandSchema
 import org.apache.spark.sql.catalyst.plans.logical._
-import org.apache.spark.sql.catalyst.util.{escapeSingleQuotedString, quoteIfNeeded, CaseInsensitiveMap, CharVarcharUtils, DateTimeUtils, ResolveDefaultColumns}
+import org.apache.spark.sql.catalyst.util.{escapeSingleQuotedString, quoteIfNeeded, CaseInsensitiveMap, CharVarcharUtils, DateTimeUtils, ResolveDefaultColumns, TimestampFormatter}
 import org.apache.spark.sql.catalyst.util.ResolveDefaultColumns.CURRENT_DEFAULT_COLUMN_METADATA_KEY
 import org.apache.spark.sql.classic.ClassicConversions.castToImpl
 import org.apache.spark.sql.connector.catalog.CatalogV2Implicits.TableIdentifierHelper
@@ -918,20 +923,18 @@ case class ShowTablesCommand(
     // Since we need to return a Seq of rows, we will call getTables directly
     // instead of calling tables in sparkSession.
     val catalog = sparkSession.sessionState.catalog
-    val db = databaseName.getOrElse(catalog.getCurrentDatabase)
+    val db = ShowTablesHelper.resolveDatabase(databaseName, catalog)
+
     if (partitionSpec.isEmpty) {
       // Show the information of tables.
-      val tables =
-        tableIdentifierPattern.map(catalog.listTables(db, _)).getOrElse(catalog.listTables(db))
+      val tables = ShowTablesHelper.listTables(db, tableIdentifierPattern, catalog)
       tables.map { tableIdent =>
-        val database = tableIdent.database.getOrElse("")
-        val tableName = tableIdent.table
-        val isTemp = catalog.isTempView(tableIdent)
+        val tableInfo = ShowTablesHelper.getTableInfo(tableIdent, catalog)
         if (isExtended) {
           val information = catalog.getTempViewOrPermanentTableMetadata(tableIdent).simpleString
-          Row(database, tableName, isTemp, s"$information\n")
+          Row(tableInfo.database, tableInfo.tableName, tableInfo.isTemp, s"$information\n")
         } else {
-          Row(database, tableName, isTemp)
+          Row(tableInfo.database, tableInfo.tableName, tableInfo.isTemp)
         }
       }
     } else {
@@ -939,22 +942,188 @@ case class ShowTablesCommand(
       //
       // Note: tableIdentifierPattern should be non-empty, otherwise a [[ParseException]]
       // should have been thrown by the sql parser.
-      val table = catalog.getTableMetadata(TableIdentifier(tableIdentifierPattern.get, Some(db)))
-
-      DDLUtils.verifyPartitionProviderIsHive(sparkSession, table, "SHOW TABLE EXTENDED")
-
-      val tableIdent = table.identifier
-      val normalizedSpec = PartitioningUtils.normalizePartitionSpec(
-        partitionSpec.get,
-        table.partitionSchema,
-        tableIdent.quotedString,
-        sparkSession.sessionState.conf.resolver)
-      val partition = catalog.getPartition(tableIdent, normalizedSpec)
-      val database = tableIdent.database.getOrElse("")
-      val tableName = tableIdent.table
-      val isTemp = catalog.isTempView(tableIdent)
+      val (tableIdent, partition) = ShowTablesHelper.getPartitionInfo(
+        tableIdentifierPattern.get, db, partitionSpec.get, sparkSession)
+      val tableInfo = ShowTablesHelper.getTableInfo(tableIdent, catalog)
       val information = partition.simpleString
-      Seq(Row(database, tableName, isTemp, s"$information\n"))
+      Seq(Row(tableInfo.database, tableInfo.tableName, tableInfo.isTemp, s"$information\n"))
+    }
+  }
+}
+
+/**
+ * Helper object for SHOW TABLES commands containing shared utilities for both tabular and JSON.
+ */
+private[command] object ShowTablesHelper {
+
+  /**
+   * Basic table information that is common to both tabular and JSON output.
+   */
+  case class TableInfo(database: String, tableName: String, isTemp: Boolean)
+
+  /**
+   * Resolves the database name, using current database if not specified.
+   */
+  def resolveDatabase(databaseName: Option[String], catalog: SessionCatalog): String = {
+    databaseName.getOrElse(catalog.getCurrentDatabase)
+  }
+
+  /**
+   * Lists tables in the specified database, optionally filtered by pattern.
+   */
+  def listTables(
+      db: String,
+      pattern: Option[String],
+      catalog: SessionCatalog): Seq[TableIdentifier] = {
+    pattern.map(catalog.listTables(db, _)).getOrElse(catalog.listTables(db))
+  }
+
+  /**
+   * Extracts basic table information from a TableIdentifier.
+   */
+  def getTableInfo(tableIdent: TableIdentifier, catalog: SessionCatalog): TableInfo = {
+    TableInfo(
+      database = tableIdent.database.getOrElse(""),
+      tableName = tableIdent.table,
+      isTemp = catalog.isTempView(tableIdent)
+    )
+  }
+
+  /**
+   * Gets and normalizes partition specification.
+   */
+  def getPartitionInfo(
+      tableIdentifierPattern: String,
+      db: String,
+      partitionSpec: TablePartitionSpec,
+      sparkSession: SparkSession): (TableIdentifier, CatalogTablePartition) = {
+    val catalog = sparkSession.sessionState.catalog
+    val table = catalog.getTableMetadata(TableIdentifier(tableIdentifierPattern, Some(db)))
+
+    DDLUtils.verifyPartitionProviderIsHive(sparkSession, table, "SHOW TABLE EXTENDED")
+
+    val tableIdent = table.identifier
+    val normalizedSpec = PartitioningUtils.normalizePartitionSpec(
+      partitionSpec,
+      table.partitionSchema,
+      tableIdent.quotedString,
+      sparkSession.sessionState.conf.resolver)
+    val partition = catalog.getPartition(tableIdent, normalizedSpec)
+
+    (tableIdent, partition)
+  }
+}
+
+/**
+ * Helper object for SHOW TABLES JSON commands containing JSON-specific utilities.
+ */
+private[command] object ShowTablesJsonHelper {
+  private lazy val timestampFormatter =
+    TimestampFormatter("yyyy-MM-dd'T'HH:mm:ss'Z'", ZoneOffset.UTC, isParsing = false)
+
+  def buildBaseFields(tableInfo: ShowTablesHelper.TableInfo): List[(String, JValue)] = {
+    List(
+      "namespace" -> JString(tableInfo.database),
+      "name" -> JString(tableInfo.tableName),
+      "isTemporary" -> JBool(tableInfo.isTemp))
+  }
+
+  def normalizeKeyValue(key: String, value: JValue): (String, JValue) = {
+    val normalizedValue = (key, value) match {
+      case ("Created Time" | "Last Access", JLong(timestamp)) =>
+        JString(timestampFormatter.format(DateTimeUtils.millisToMicros(timestamp)))
+      case (_, v) => v
+    }
+    key.toLowerCase(Locale.ROOT).replace(" ", "_") -> normalizedValue
+  }
+
+  def wrapTablesJson(tablesJson: Seq[JObject]): Row = {
+    val jsonOutput = JObject("tables" -> JArray(tablesJson.toList))
+    Row(compact(render(jsonOutput)))
+  }
+}
+
+/**
+ * A command to list tables in JSON format.
+ * The syntax of using this command in SQL is:
+ * {{{
+ *   SHOW TABLES [(IN|FROM) database_name] [[LIKE] 'identifier_with_wildcards'] AS JSON;
+ * }}}
+ */
+case class ShowTablesJsonCommand(
+    databaseName: Option[String],
+    tableIdentifierPattern: Option[String],
+    override val output: Seq[Attribute]) extends LeafRunnableCommand {
+
+  override def run(sparkSession: SparkSession): Seq[Row] = {
+    val catalog = sparkSession.sessionState.catalog
+    val db = ShowTablesHelper.resolveDatabase(databaseName, catalog)
+    val tables = ShowTablesHelper.listTables(db, tableIdentifierPattern, catalog)
+
+    val tablesJson = tables.map { tableIdent =>
+      val tableInfo = ShowTablesHelper.getTableInfo(tableIdent, catalog)
+      JObject(ShowTablesJsonHelper.buildBaseFields(tableInfo): _*)
+    }
+
+    Seq(ShowTablesJsonHelper.wrapTablesJson(tablesJson))
+  }
+}
+
+/**
+ * A command to list tables in extended JSON format.
+ * The syntax of using this command in SQL is:
+ * {{{
+ *   SHOW TABLE EXTENDED [(IN|FROM) database_name] LIKE 'identifier_with_wildcards'
+ *   [PARTITION(partition_spec)] AS JSON;
+ * }}}
+ */
+case class ShowTablesExtendedJsonCommand(
+    databaseName: Option[String],
+    tableIdentifierPattern: String,
+    partitionSpec: Option[TablePartitionSpec],
+    override val output: Seq[Attribute]) extends LeafRunnableCommand {
+
+  override def run(sparkSession: SparkSession): Seq[Row] = {
+    val catalog = sparkSession.sessionState.catalog
+    val db = ShowTablesHelper.resolveDatabase(databaseName, catalog)
+
+    if (partitionSpec.isEmpty) {
+      // Extended table info without partition
+      val tables = ShowTablesHelper.listTables(db, Some(tableIdentifierPattern), catalog)
+
+      val tablesJson = tables.map { tableIdent =>
+        val tableInfo = ShowTablesHelper.getTableInfo(tableIdent, catalog)
+        val baseFields = ShowTablesJsonHelper.buildBaseFields(tableInfo)
+
+        // Add metadata fields from table
+        val metadataFields = if (!tableInfo.isTemp) {
+          val metadata = catalog.getTempViewOrPermanentTableMetadata(tableIdent)
+          metadata.toJsonLinkedHashMap.toList.map {
+            case (key, value) => ShowTablesJsonHelper.normalizeKeyValue(key, value)
+          }
+        } else {
+          List.empty
+        }
+
+        JObject(baseFields ++ metadataFields: _*)
+      }
+
+      Seq(ShowTablesJsonHelper.wrapTablesJson(tablesJson))
+    } else {
+      // Partition-specific info
+      val (tableIdent, partition) = ShowTablesHelper.getPartitionInfo(
+        tableIdentifierPattern, db, partitionSpec.get, sparkSession)
+      val tableInfo = ShowTablesHelper.getTableInfo(tableIdent, catalog)
+      val baseFields = ShowTablesJsonHelper.buildBaseFields(tableInfo)
+
+      // Add partition metadata
+      val partitionFields = partition.toJsonLinkedHashMap.toList.map {
+        case (key, value) => ShowTablesJsonHelper.normalizeKeyValue(key, value)
+      }
+
+      val partitionJson = JObject(baseFields ++ partitionFields: _*)
+
+      Seq(ShowTablesJsonHelper.wrapTablesJson(Seq(partitionJson)))
     }
   }
 }

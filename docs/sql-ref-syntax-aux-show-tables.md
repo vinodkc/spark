@@ -29,7 +29,7 @@ current database.
 ### Syntax
 
 ```sql
-SHOW TABLES [ { FROM | IN } database_name ] [ LIKE regex_pattern ]
+SHOW TABLES [ { FROM | IN } database_name ] [ LIKE regex_pattern ] [ AS JSON ]
 ```
 
 ### Parameters
@@ -46,6 +46,22 @@ SHOW TABLES [ { FROM | IN } database_name ] [ LIKE regex_pattern ]
      * `*` alone matches 0 or more characters and `|` is used to separate multiple different regular expressions,
        any of which can match.
      * The leading and trailing blanks are trimmed in the input pattern before processing. The pattern match is case-insensitive.
+
+* **AS JSON**
+
+     An optional parameter to return table information in JSON format. The output is a single row with a single column containing a JSON string with the following structure:
+
+     ```json
+     {
+       "tables": [
+         {
+           "namespace": "<database_name>",
+           "name": "<table_name>",
+           "isTemporary": <true|false>
+         }
+       ]
+     }
+     ```
 
 ### Examples
 
@@ -96,6 +112,33 @@ SHOW TABLES LIKE 'sam*|suj';
 | default|     sam1|      false|
 | default|      suj|      false|
 +--------+---------+-----------+
+
+-- List all tables in JSON format
+SHOW TABLES AS JSON;
++----------------------------------------------------------------------------------------------------------+
+|namespace                                                                                                 |
++----------------------------------------------------------------------------------------------------------+
+|{"tables":[{"namespace":"default","name":"sam","isTemporary":false},{"namespace":"default","name":"sam1",|
+|"isTemporary":false},{"namespace":"default","name":"suj","isTemporary":false}]}                          |
++----------------------------------------------------------------------------------------------------------+
+
+-- List all tables from userdb database in JSON format
+SHOW TABLES FROM userdb AS JSON;
++----------------------------------------------------------------------------------------------------------+
+|namespace                                                                                                 |
++----------------------------------------------------------------------------------------------------------+
+|{"tables":[{"namespace":"userdb","name":"user1","isTemporary":false},{"namespace":"userdb","name":"user2"|
+|,"isTemporary":false}]}                                                                                   |
++----------------------------------------------------------------------------------------------------------+
+
+-- List tables matching pattern in JSON format
+SHOW TABLES LIKE 'sam*' AS JSON;
++----------------------------------------------------------------------------------------------------------+
+|namespace                                                                                                 |
++----------------------------------------------------------------------------------------------------------+
+|{"tables":[{"namespace":"default","name":"sam","isTemporary":false},{"namespace":"default","name":"sam1",|
+|"isTemporary":false}]}                                                                                    |
++----------------------------------------------------------------------------------------------------------+
 ```
 
 ### Related Statements

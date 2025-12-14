@@ -448,6 +448,26 @@ class ResolveSessionCatalog(val catalogManager: CatalogManager)
           throw QueryCompilationErrors.missingCatalogViewsAbilityError(ns.catalog)
       }
 
+    case ShowTablesJson(ns: ResolvedNamespace, pattern, output) =>
+      ns match {
+        case ResolvedDatabaseInSessionCatalog(db) =>
+          ShowTablesJsonCommand(Some(db), pattern, output)
+        case _ =>
+          // For non-session catalogs, leave as ShowTablesJson to be handled by DataSourceV2Strategy
+          ShowTablesJson(ns, pattern, output)
+      }
+
+    case ShowTablesExtendedJson(ns: ResolvedNamespace, pattern, partitionSpec, output) =>
+      ns match {
+        case ResolvedDatabaseInSessionCatalog(db) =>
+          val tablePartitionSpec = partitionSpec.map(
+            _.asInstanceOf[UnresolvedPartitionSpec].spec)
+          ShowTablesExtendedJsonCommand(Some(db), pattern, tablePartitionSpec, output)
+        case _ =>
+          // For non-session catalogs, leave as ShowTablesExtendedJson
+          ShowTablesExtendedJson(ns, pattern, partitionSpec, output)
+      }
+
     // If target is view, force use v1 command
     case ShowTableProperties(ResolvedViewIdentifier(ident), propertyKey, output) =>
       ShowTablePropertiesCommand(ident, propertyKey, output)

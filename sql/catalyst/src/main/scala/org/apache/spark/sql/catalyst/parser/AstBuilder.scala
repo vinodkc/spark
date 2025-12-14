@@ -5245,7 +5245,7 @@ class AstBuilder extends DataTypeAstBuilder
   }
 
   /**
-   * Create a [[ShowTables]] command.
+   * Create a [[ShowTables]] or [[ShowTablesJson]] command.
    */
   override def visitShowTables(ctx: ShowTablesContext): LogicalPlan = withOrigin(ctx) {
     val ns = if (ctx.identifierReference() != null) {
@@ -5253,34 +5253,52 @@ class AstBuilder extends DataTypeAstBuilder
     } else {
       CurrentNamespace
     }
-    ShowTables(ns, Option(ctx.pattern).map(x => string(visitStringLit(x))))
+    val pattern = Option(ctx.pattern).map(x => string(visitStringLit(x)))
+
+    if (ctx.JSON != null) {
+      ShowTablesJson(ns, pattern)
+    } else {
+      ShowTables(ns, pattern)
+    }
   }
 
   /**
-   * Create a [[ShowTablesExtended]] or [[ShowTablePartition]] command.
+   * Create a [[ShowTablesExtended]], [[ShowTablePartition]], or [[ShowTablesExtendedJson]] command.
    */
   override def visitShowTableExtended(
       ctx: ShowTableExtendedContext): LogicalPlan = withOrigin(ctx) {
+    val isJson = ctx.JSON != null
+    val pattern = string(visitStringLit(ctx.pattern))
+    val ns = if (ctx.identifierReference() != null) {
+      withIdentClause(ctx.identifierReference, UnresolvedNamespace(_))
+    } else {
+      CurrentNamespace
+    }
+
     Option(ctx.partitionSpec).map { spec =>
-      val table = withOrigin(ctx.pattern) {
-        if (ctx.identifierReference() != null) {
-          withIdentClause(ctx.identifierReference(), ns => {
-            val names = ns :+ string(visitStringLit(ctx.pattern))
-            UnresolvedTable(names, "SHOW TABLE EXTENDED ... PARTITION ...")
-          })
-        } else {
-          val names = Seq.empty[String] :+ string(visitStringLit(ctx.pattern))
-          UnresolvedTable(names, "SHOW TABLE EXTENDED ... PARTITION ...")
-        }
-      }
-      ShowTablePartition(table, UnresolvedPartitionSpec(visitNonOptionalPartitionSpec(spec)))
-    }.getOrElse {
-      val ns = if (ctx.identifierReference() != null) {
-        withIdentClause(ctx.identifierReference, UnresolvedNamespace(_))
+      val partitionSpec = UnresolvedPartitionSpec(visitNonOptionalPartitionSpec(spec))
+      if (isJson) {
+        ShowTablesExtendedJson(ns, pattern, Some(partitionSpec))
       } else {
-        CurrentNamespace
+        val table = withOrigin(ctx.pattern) {
+          if (ctx.identifierReference() != null) {
+            withIdentClause(ctx.identifierReference(), ns => {
+              val names = ns :+ pattern
+              UnresolvedTable(names, "SHOW TABLE EXTENDED ... PARTITION ...")
+            })
+          } else {
+            val names = Seq.empty[String] :+ pattern
+            UnresolvedTable(names, "SHOW TABLE EXTENDED ... PARTITION ...")
+          }
+        }
+        ShowTablePartition(table, partitionSpec)
       }
-      ShowTablesExtended(ns, string(visitStringLit(ctx.pattern)))
+    }.getOrElse {
+      if (isJson) {
+        ShowTablesExtendedJson(ns, pattern)
+      } else {
+        ShowTablesExtended(ns, pattern)
+      }
     }
   }
 
