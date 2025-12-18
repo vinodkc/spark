@@ -5088,6 +5088,46 @@ class SQLQuerySuite extends QueryTest with SharedSparkSession with AdaptiveSpark
       checkAnswer(sql(query), Row(1, 2))
     }
   }
+
+  test("avgx - learning aggregate function in SQL") {
+    // Test basic avgx
+    checkAnswer(
+      sql("SELECT avgx(col) FROM VALUES (1), (2), (3), (4), (5) AS t(col)"),
+      Row(3.0)
+    )
+
+    // Test avgx with nulls
+    checkAnswer(
+      sql("SELECT avgx(col) FROM VALUES (1), (NULL), (3), (NULL), (5) AS t(col)"),
+      Row(3.0)
+    )
+
+    // Test avgx with GROUP BY
+    checkAnswer(
+      sql("SELECT key, avgx(value) FROM VALUES ('A', 10), ('B', 20), ('A', 30), ('B', 40) " +
+        "AS t(key, value) GROUP BY key ORDER BY key"),
+      Seq(Row("A", 20.0), Row("B", 30.0))
+    )
+
+    // Test avgx with WHERE clause
+    checkAnswer(
+      sql("SELECT avgx(col) FROM VALUES (10), (20), (30), (40), (50) AS t(col) WHERE col > 20"),
+      Row(40.0)
+    )
+
+    // Test avgx with all nulls
+    checkAnswer(
+      sql("SELECT avgx(col) FROM VALUES (NULL), (NULL), (NULL) AS t(col)"),
+      Row(null)
+    )
+
+    // Compare avgx with avg
+    checkAnswer(
+      sql("SELECT avgx(col) as avgx_result, avg(col) as avg_result " +
+        "FROM VALUES (1), (2), (3), (4), (5) AS t(col)"),
+      Row(3.0, 3.0)
+    )
+  }
 }
 
 case class Foo(bar: Option[String])

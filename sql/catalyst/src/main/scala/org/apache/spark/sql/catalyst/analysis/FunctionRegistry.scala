@@ -475,6 +475,7 @@ object FunctionRegistry {
     // aggregate functions
     expression[HyperLogLogPlusPlus]("approx_count_distinct"),
     expression[Average]("avg"),
+    expression[AvgX]("avgx"),
     expression[Corr]("corr"),
     expression[Count]("count"),
     expression[CountIf]("count_if"),

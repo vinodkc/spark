@@ -167,3 +167,80 @@ object TryAverageExpressionBuilder extends ExpressionBuilder {
     }
   }
 }
+
+/**
+ * AvgX: A simplified implementation of AVERAGE aggregate function for learning purposes.
+ *
+ * This is a DeclarativeAggregate that demonstrates:
+ * - Using multiple buffer attributes (sum and count)
+ * - Division in evaluateExpression
+ * - Handling null inputs properly
+ *
+ * Key differences from Average:
+ * - Simplified: No ANSI mode, no interval types, no overflow handling
+ * - Only supports numeric types
+ * - Always returns Double for simplicity
+ */
+@ExpressionDescription(
+  usage =
+    "_FUNC_(expr) - Returns the mean calculated from values of a group (learning implementation).",
+  examples = """
+    Examples:
+      > SELECT _FUNC_(col) FROM VALUES (1), (2), (3) AS tab(col);
+       2.0
+      > SELECT _FUNC_(col) FROM VALUES (1), (2), (NULL) AS tab(col);
+       1.5
+      > SELECT _FUNC_(col) FROM VALUES (NULL), (NULL) AS tab(col);
+       NULL
+  """,
+  group = "agg_funcs",
+  since = "4.0.0")
+case class AvgX(child: Expression)
+  extends DeclarativeAggregate
+  with ImplicitCastInputTypes
+  with UnaryLike[Expression] {
+
+  override def prettyName: String = "avgx"
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
+
+  override def nullable: Boolean = true
+
+  // Always return Double for simplicity
+  override def dataType: DataType = DoubleType
+
+  // Buffer attributes: sum (as Double) and count (as Long)
+  private lazy val sum = AttributeReference("sum", DoubleType)()
+  private lazy val count = AttributeReference("count", LongType)()
+
+  override lazy val aggBufferAttributes = sum :: count :: Nil
+
+  // Initialize: sum = 0.0, count = 0
+  override lazy val initialValues = Seq(
+    /* sum = */ Literal(0.0),
+    /* count = */ Literal(0L)
+  )
+
+  // Update: Add non-null values to sum and increment count
+  override lazy val updateExpressions: Seq[Expression] = Seq(
+    /* sum = */ Add(sum, coalesce(child.cast(DoubleType), Literal(0.0))),
+    /* count = */ If(child.isNull, count, count + 1L)
+  )
+
+  // Merge: Add sums and counts from two buffers
+  override lazy val mergeExpressions = Seq(
+    /* sum = */ Add(sum.left, sum.right),
+    /* count = */ count.left + count.right
+  )
+
+  // Evaluate: sum / count (return null if count is 0)
+  override lazy val evaluateExpression: Expression =
+    If(EqualTo(count, Literal(0L)),
+      Literal(null, DoubleType),
+      Divide(sum, count.cast(DoubleType), EvalMode.LEGACY))
+
+  override def flatArguments: Iterator[Any] = Iterator(child)
+
+  override protected def withNewChildInternal(newChild: Expression): AvgX =
+    copy(child = newChild)
+}

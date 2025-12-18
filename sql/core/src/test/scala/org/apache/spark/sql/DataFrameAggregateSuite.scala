@@ -3467,6 +3467,42 @@ class DataFrameAggregateSuite extends QueryTest
     // Should only count non-null values
     assert(n == 3L)
   }
+
+  test("avgx - learning aggregate function") {
+    // Test basic avgx functionality
+    val df = Seq(1, 2, 3, 4, 5).toDF("value")
+    checkAnswer(
+      df.selectExpr("avgx(value)"),
+      Row(3.0)
+    )
+
+    // Test avgx with nulls
+    val dfWithNulls = Seq(Some(1), None, Some(3), None, Some(5)).toDF("value")
+    checkAnswer(
+      dfWithNulls.selectExpr("avgx(value)"),
+      Row(3.0)
+    )
+
+    // Test avgx with all nulls
+    val allNulls = Seq[Option[Int]](None, None, None).toDF("value")
+    checkAnswer(
+      allNulls.selectExpr("avgx(value)"),
+      Row(null)
+    )
+
+    // Test avgx with GROUP BY
+    val grouped = Seq(("A", 10), ("B", 20), ("A", 30), ("B", 40)).toDF("key", "value")
+    checkAnswer(
+      grouped.groupBy("key").agg(expr("avgx(value)")),
+      Seq(Row("A", 20.0), Row("B", 30.0))
+    )
+
+    // Compare avgx with built-in avg
+    checkAnswer(
+      df.selectExpr("avgx(value)", "avg(value)"),
+      Row(3.0, 3.0)
+    )
+  }
 }
 
 case class B(c: Option[Double])

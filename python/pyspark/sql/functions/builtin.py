@@ -1678,6 +1678,62 @@ def avg(col: "ColumnOrName") -> Column:
 
 
 @_try_remote_functions
+def avgx(col: "ColumnOrName") -> Column:
+    """
+    Aggregate function: returns the average of the values in a group (learning implementation).
+
+    .. versionadded:: 4.0.0
+
+    Parameters
+    ----------
+    col : :class:`~pyspark.sql.Column` or column name
+        target column to compute on.
+
+    Returns
+    -------
+    :class:`~pyspark.sql.Column`
+        the column for computed results.
+
+    Examples
+    --------
+    Example 1: Basic avgx usage
+
+    >>> import pyspark.sql.functions as sf
+    >>> df = spark.createDataFrame([(1,), (2,), (3,)], ["value"])
+    >>> df.select(sf.avgx("value")).show()
+    +-----------+
+    |avgx(value)|
+    +-----------+
+    |        2.0|
+    +-----------+
+
+    Example 2: avgx with None values
+
+    >>> import pyspark.sql.functions as sf
+    >>> df = spark.createDataFrame([(1,), (None,), (3,)], ["value"])
+    >>> df.select(sf.avgx("value")).show()
+    +-----------+
+    |avgx(value)|
+    +-----------+
+    |        2.0|
+    +-----------+
+
+    Example 3: avgx with GROUP BY
+
+    >>> import pyspark.sql.functions as sf
+    >>> df = spark.createDataFrame([("A", 10), ("B", 20), ("A", 30)], ["key", "value"])
+    >>> df.groupBy("key").agg(sf.avgx("value")).orderBy("key").show()
+    +---+-----------+
+    |key|avgx(value)|
+    +---+-----------+
+    |  A|       20.0|
+    |  B|       20.0|
+    +---+-----------+
+    """
+    return _invoke_function_over_columns("avgx", col)
+
+
+@_try_remote_functions
 def mean(col: "ColumnOrName") -> Column:
     """
     Aggregate function: returns the average of the values in a group.

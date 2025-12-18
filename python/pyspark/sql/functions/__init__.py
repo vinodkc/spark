@@ -353,6 +353,7 @@ __all__ = [  # noqa: F405
     "approx_percentile",
     "array_agg",
     "avg",
+    "avgx",
     "bit_and",
     "bit_or",
     "bit_xor",
