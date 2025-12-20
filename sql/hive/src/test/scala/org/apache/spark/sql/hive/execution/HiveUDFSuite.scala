@@ -837,6 +837,36 @@ class HiveUDFSuite extends QueryTest with TestHiveSingleton with SQLTestUtils {
     }
     hiveContext.reset()
   }
+
+  test("HiveGenericUDTF Codegen Support") {
+    import org.apache.hadoop.hive.ql.udf.generic.GenericUDTFExplode
+    withUserDefinedFunction("CodeGenHiveGenericUDTF" -> false) {
+      sql(s"CREATE FUNCTION CodeGenHiveGenericUDTF AS '${classOf[GenericUDTFExplode].getName}'")
+      withTable("HiveGenericUDTFTable") {
+        sql(s"create table HiveGenericUDTFTable as select array(1, 2, 3) as v")
+        val df = sql("SELECT CodeGenHiveGenericUDTF(v) from HiveGenericUDTFTable")
+        val plan = df.queryExecution.executedPlan
+        assert(plan.find(_.isInstanceOf[WholeStageCodegenExec]).isDefined,
+          s"WholeStageCodegen should be enabled:\n$plan")
+        checkAnswer(df, Seq(Row(1), Row(2), Row(3)))
+      }
+    }
+  }
+
+  test("HiveGenericUDTF Codegen Support with multiple columns") {
+    import org.apache.hadoop.hive.ql.udf.generic.GenericUDTFExplode
+    withUserDefinedFunction("CodeGenHiveGenericUDTF" -> false) {
+      sql(s"CREATE FUNCTION CodeGenHiveGenericUDTF AS '${classOf[GenericUDTFExplode].getName}'")
+      withTable("HiveGenericUDTFTable") {
+        sql(s"create table HiveGenericUDTFTable as select map('a', 1, 'b', 2) as v")
+        val df = sql("SELECT CodeGenHiveGenericUDTF(v) from HiveGenericUDTFTable")
+        val plan = df.queryExecution.executedPlan
+        assert(plan.find(_.isInstanceOf[WholeStageCodegenExec]).isDefined,
+          s"WholeStageCodegen should be enabled:\n$plan")
+        checkAnswer(df, Seq(Row("a", 1), Row("b", 2)))
+      }
+    }
+  }
 }
 
 class TestPair(x: Int, y: Int) extends Writable with Serializable {

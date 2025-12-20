@@ -30,7 +30,7 @@ import org.apache.hadoop.hive.serde2.objectinspector.{ConstantObjectInspector, O
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
-import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, CodeGenerator, CodegenFallback, ExprCode}
+import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, CodeGenerator, ExprCode, FalseLiteral}
 import org.apache.spark.sql.catalyst.expressions.codegen.Block.BlockHelper
 import org.apache.spark.sql.hive.HiveShim._
 import org.apache.spark.sql.types._
@@ -207,55 +207,118 @@ private[hive] case class HiveGenericUDTF(
     name: String,
     funcWrapper: HiveFunctionWrapper,
     children: Seq[Expression])
-  extends Generator with HiveInspectors with CodegenFallback with UserDefinedExpression {
+  extends Generator with HiveInspectors with UserDefinedExpression {
+
+  override lazy val elementSchema: StructType = evaluator.elementSchema
 
   @transient
-  protected lazy val function: GenericUDTF = {
+  private lazy val evaluator = new HiveGenericUDTFEvaluator(funcWrapper, children)
+
+  override def eval(input: InternalRow): IterableOnce[InternalRow] = {
+    children.zipWithIndex.foreach {
+      case (child, idx) => evaluator.setArg(idx, child.eval(input))
+    }
+    evaluator.evaluate()
+  }
+
+  override def terminate(): IterableOnce[InternalRow] = {
+    evaluator.terminate()
+  }
+
+  override def toString: String = {
+    s"$nodeName#${funcWrapper.functionClassName}(${children.mkString(",")})"
+  }
+
+  override def prettyName: String = name
+
+  override protected def withNewChildrenInternal(newChildren: IndexedSeq[Expression]): Expression =
+    copy(children = newChildren)
+
+  override protected def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode = {
+    val refEvaluator = ctx.addReferenceObj("evaluator", evaluator)
+    val evals = children.map(_.genCode(ctx))
+
+    val setValues = evals.zipWithIndex.map {
+      case (eval, i) =>
+        s"""
+           |if (${eval.isNull}) {
+           |  $refEvaluator.setArg($i, null);
+           |} else {
+           |  $refEvaluator.setArg($i, ${eval.value});
+           |}
+           |""".stripMargin
+    }
+
+    val iterableOnceType = classOf[IterableOnce[_]].getName
+
+    ev.copy(code =
+      code"""
+         |${evals.map(_.code).mkString("\n")}
+         |${setValues.mkString("\n")}
+         |$iterableOnceType ${ev.value} = null;
+         |try {
+         |  ${ev.value} = ($iterableOnceType) $refEvaluator.evaluate();
+         |} catch (Throwable e) {
+         |  throw QueryExecutionErrors.failedExecuteUserDefinedFunctionError(
+         |    "${funcWrapper.functionClassName}",
+         |    "${children.map(_.dataType.catalogString).mkString(", ")}",
+         |    "${evaluator.elementSchema.catalogString}",
+         |    e);
+         |}
+       """.stripMargin,
+      isNull = FalseLiteral
+    )
+  }
+}
+
+class HiveGenericUDTFEvaluator(
+    funcWrapper: HiveFunctionWrapper,
+    children: Seq[Expression])
+  extends HiveInspectors
+  with Serializable {
+
+  @transient
+  private lazy val function: GenericUDTF = {
     val fun: GenericUDTF = funcWrapper.createFunction()
     fun.setCollector(collector)
     fun
   }
 
   @transient
-  protected lazy val inputInspector = {
+  private lazy val inputInspector = {
     val inspectors = children.map(toInspector)
     val fields = inspectors.indices.map(index => s"_col$index").asJava
     ObjectInspectorFactory.getStandardStructObjectInspector(fields, inspectors.asJava)
   }
 
   @transient
-  protected lazy val outputInspector = function.initialize(inputInspector)
+  private lazy val outputInspector = function.initialize(inputInspector)
 
   @transient
-  protected lazy val udtInput = new Array[AnyRef](children.length)
-
-  @transient
-  protected lazy val collector = new UDTFCollector
-
-  override lazy val elementSchema = StructType(outputInspector.getAllStructFieldRefs.asScala.map {
-    field => StructField(field.getFieldName, inspectorToDataType(field.getFieldObjectInspector),
-      nullable = true)
-  }.toArray)
+  private lazy val udtInput = new Array[AnyRef](children.length)
 
   @transient
   private lazy val inputDataTypes: Array[DataType] = children.map(_.dataType).toArray
 
   @transient
-  private lazy val wrappers = children.map(x => wrapperFor(toInspector(x), x.dataType)).toArray
+  private lazy val wrappers: Array[Any => Any] =
+    children.map(x => wrapperFor(toInspector(x), x.dataType)).toArray
 
   @transient
   private lazy val unwrapper = unwrapperFor(outputInspector)
 
   @transient
-  private lazy val inputProjection = new InterpretedProjection(children)
+  private lazy val collector = new UDTFCollector
 
-  override def eval(input: InternalRow): IterableOnce[InternalRow] = {
-    outputInspector // Make sure initialized.
-    function.process(wrap(inputProjection(input), wrappers, udtInput, inputDataTypes))
-    collector.collectRows()
-  }
+  lazy val elementSchema: StructType = StructType(
+    outputInspector.getAllStructFieldRefs.asScala.map { field =>
+      StructField(
+        field.getFieldName,
+        inspectorToDataType(field.getFieldObjectInspector),
+        nullable = true)
+    }.toArray)
 
-  protected class UDTFCollector extends Collector {
+  private class UDTFCollector extends Collector {
     var collected = new ArrayBuffer[InternalRow]
 
     override def collect(input: java.lang.Object): Unit = {
@@ -272,20 +335,25 @@ private[hive] case class HiveGenericUDTF(
     }
   }
 
-  override def terminate(): IterableOnce[InternalRow] = {
+  def setArg(index: Int, arg: Any): Unit = {
+    udtInput(index) = if (arg == null) {
+      null
+    } else {
+      wrappers(index)(arg).asInstanceOf[AnyRef]
+    }
+  }
+
+  def evaluate(): IterableOnce[InternalRow] = {
+    outputInspector // Make sure initialized.
+    function.process(udtInput)
+    collector.collectRows()
+  }
+
+  def terminate(): IterableOnce[InternalRow] = {
     outputInspector // Make sure initialized.
     function.close()
     collector.collectRows()
   }
-
-  override def toString: String = {
-    s"$nodeName#${funcWrapper.functionClassName}(${children.mkString(",")})"
-  }
-
-  override def prettyName: String = name
-
-  override protected def withNewChildrenInternal(newChildren: IndexedSeq[Expression]): Expression =
-    copy(children = newChildren)
 }
 
 /**
