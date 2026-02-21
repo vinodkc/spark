@@ -141,7 +141,8 @@
   "ARROW_UDF_OUTPUT_EXCEEDS_INPUT_ROWS" : {
     "message" : [
       "The Arrow SCALAR_ITER UDF outputs more rows than input rows."
-    ]
+    ],
+    "sqlState" : "0A000"
   },
   "ARTIFACT_ALREADY_EXISTS" : {
     "message" : [
@@ -5384,7 +5385,8 @@
   "RESULT_LENGTH_MISMATCH_FOR_SCALAR_ITER_ARROW_UDF" : {
     "message" : [
       "The length of output in Scalar iterator Arrow UDF should be the same with the input's; however, the length of output was <output_length> and the length of input was <input_length>."
-    ]
+    ],
+    "sqlState" : "0A000"
   },
   "ROUTINE_ALREADY_EXISTS" : {
     "message" : [
@@ -5558,7 +5560,8 @@
   "STOP_ITERATION_OCCURRED_FROM_SCALAR_ITER_ARROW_UDF" : {
     "message" : [
       "Arrow iterator UDF should exhaust the input iterator."
-    ]
+    ],
+    "sqlState" : "0A000"
   },
   "STAGE_MATERIALIZATION_MULTIPLE_FAILURES" : {
     "message" : [
