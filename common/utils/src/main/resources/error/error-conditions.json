@@ -5557,12 +5557,6 @@
     ],
     "sqlState" : "07501"
   },
-  "STOP_ITERATION_OCCURRED_FROM_SCALAR_ITER_ARROW_UDF" : {
-    "message" : [
-      "Arrow iterator UDF should exhaust the input iterator."
-    ],
-    "sqlState" : "0A000"
-  },
   "STAGE_MATERIALIZATION_MULTIPLE_FAILURES" : {
     "message" : [
       "Multiple failures (<failureCount>) in stage materialization: <failureDetails>"
@@ -6064,6 +6058,12 @@
       "'<optionName>' must be specified."
     ],
     "sqlState" : "42601"
+  },
+  "STOP_ITERATION_OCCURRED_FROM_SCALAR_ITER_ARROW_UDF" : {
+    "message" : [
+      "Arrow iterator UDF should exhaust the input iterator."
+    ],
+    "sqlState" : "0A000"
   },
   "STREAMING_CHECKPOINT_MISSING_METADATA_FILE" : {
     "message" : [
