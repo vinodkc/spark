@@ -2838,6 +2838,7 @@ def read_udfs(pickleSer, infile, eval_type, runner_conf, eval_conf):
         PythonEvalType.SQL_SCALAR_PANDAS_ITER_UDF,
         PythonEvalType.SQL_SCALAR_ARROW_ITER_UDF,
     )
+    is_scalar_arrow_iter = eval_type == PythonEvalType.SQL_SCALAR_ARROW_ITER_UDF
     is_map_pandas_iter = eval_type == PythonEvalType.SQL_MAP_PANDAS_ITER_UDF
 
     if is_scalar_iter or is_map_pandas_iter:
@@ -2846,6 +2847,16 @@ def read_udfs(pickleSer, infile, eval_type, runner_conf, eval_conf):
             assert num_udfs == 1, "One SCALAR_ITER UDF expected here."
         if is_map_pandas_iter:
             assert num_udfs == 1, "One MAP_PANDAS_ITER UDF expected here."
+
+        # Arrow SCALAR_ITER UDF uses Arrow-specific error classes; Pandas uses Pandas-specific ones.
+        if is_scalar_arrow_iter:
+            error_class_output_exceeds = "ARROW_UDF_OUTPUT_EXCEEDS_INPUT_ROWS"
+            error_class_stop_iteration = "STOP_ITERATION_OCCURRED_FROM_SCALAR_ITER_ARROW_UDF"
+            error_class_length_mismatch = "RESULT_LENGTH_MISMATCH_FOR_SCALAR_ITER_ARROW_UDF"
+        else:
+            error_class_output_exceeds = "PANDAS_UDF_OUTPUT_EXCEEDS_INPUT_ROWS"
+            error_class_stop_iteration = "STOP_ITERATION_OCCURRED_FROM_SCALAR_ITER_PANDAS_UDF"
+            error_class_length_mismatch = "RESULT_LENGTH_MISMATCH_FOR_SCALAR_ITER_PANDAS_UDF"
 
         arg_offsets, udf = udfs[0]
 
@@ -2875,7 +2886,7 @@ def read_udfs(pickleSer, infile, eval_type, runner_conf, eval_conf):
                 # input length.
                 if is_scalar_iter and num_output_rows > num_input_rows:
                     raise PySparkRuntimeError(
-                        errorClass="PANDAS_UDF_OUTPUT_EXCEEDS_INPUT_ROWS", messageParameters={}
+                        errorClass=error_class_output_exceeds, messageParameters={}
                     )
                 yield (result_batch, result_type)
 
@@ -2886,13 +2897,13 @@ def read_udfs(pickleSer, infile, eval_type, runner_conf, eval_conf):
                     pass
                 else:
                     raise PySparkRuntimeError(
-                        errorClass="STOP_ITERATION_OCCURRED_FROM_SCALAR_ITER_PANDAS_UDF",
+                        errorClass=error_class_stop_iteration,
                         messageParameters={},
                     )
 
                 if num_output_rows != num_input_rows:
                     raise PySparkRuntimeError(
-                        errorClass="RESULT_LENGTH_MISMATCH_FOR_SCALAR_ITER_PANDAS_UDF",
+                        errorClass=error_class_length_mismatch,
                         messageParameters={
                             "output_length": str(num_output_rows),
                             "input_length": str(num_input_rows),

@@ -138,6 +138,11 @@
     ],
     "sqlState" : "42K0G"
   },
+  "ARROW_UDF_OUTPUT_EXCEEDS_INPUT_ROWS" : {
+    "message" : [
+      "The Arrow SCALAR_ITER UDF outputs more rows than input rows."
+    ]
+  },
   "ARTIFACT_ALREADY_EXISTS" : {
     "message" : [
       "The artifact <normalizedRemoteRelativePath> already exists. Please choose a different name for the new artifact because it cannot be overwritten."
@@ -5376,6 +5381,11 @@
     ],
     "sqlState" : "42K05"
   },
+  "RESULT_LENGTH_MISMATCH_FOR_SCALAR_ITER_ARROW_UDF" : {
+    "message" : [
+      "The length of output in Scalar iterator Arrow UDF should be the same with the input's; however, the length of output was <output_length> and the length of input was <input_length>."
+    ]
+  },
   "ROUTINE_ALREADY_EXISTS" : {
     "message" : [
       "Cannot create the <newRoutineType> <routineName> because a <existingRoutineType> of that name already exists.",
@@ -5544,6 +5554,11 @@
       "SQL Scripts in EXECUTE IMMEDIATE commands are not allowed. Please ensure that the SQL query provided (<sqlString>) is not SQL Script. Make sure the sql_string is a well-formed SQL statement and does not contain BEGIN and END."
     ],
     "sqlState" : "07501"
+  },
+  "STOP_ITERATION_OCCURRED_FROM_SCALAR_ITER_ARROW_UDF" : {
+    "message" : [
+      "Arrow iterator UDF should exhaust the input iterator."
+    ]
   },
   "STAGE_MATERIALIZATION_MULTIPLE_FAILURES" : {
     "message" : [

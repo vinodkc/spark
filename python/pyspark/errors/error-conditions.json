@@ -14,6 +14,11 @@
       "Arrow legacy IPC format is not supported in PySpark, please unset ARROW_PRE_0_15_IPC_FORMAT."
     ]
   },
+  "ARROW_UDF_OUTPUT_EXCEEDS_INPUT_ROWS": {
+    "message": [
+      "The Arrow SCALAR_ITER UDF outputs more rows than input rows."
+    ]
+  },
   "ATTRIBUTE_NOT_CALLABLE": {
     "message": [
       "Attribute `<attr_name>` in provided object `<obj_name>` is not callable."
@@ -1067,6 +1072,11 @@
       "Number of columns of the returned pandas.DataFrame doesn't match specified schema. Expected: <expected> Actual: <actual>"
     ]
   },
+  "RESULT_LENGTH_MISMATCH_FOR_SCALAR_ITER_ARROW_UDF": {
+    "message": [
+      "The length of output in Scalar iterator Arrow UDF should be the same with the input's; however, the length of output was <output_length> and the length of input was <input_length>."
+    ]
+  },
   "RESULT_LENGTH_MISMATCH_FOR_SCALAR_ITER_PANDAS_UDF": {
     "message": [
       "The length of output in Scalar iterator pandas UDF should be the same with the input's; however, the length of output was <output_length> and the length of input was <input_length>."
@@ -1203,6 +1213,11 @@
   "STOP_ITERATION_OCCURRED": {
     "message": [
       "Caught StopIteration thrown from user's code; failing the task: <exc>"
+    ]
+  },
+  "STOP_ITERATION_OCCURRED_FROM_SCALAR_ITER_ARROW_UDF": {
+    "message": [
+      "Arrow iterator UDF should exhaust the input iterator."
     ]
   },
   "STOP_ITERATION_OCCURRED_FROM_SCALAR_ITER_PANDAS_UDF": {
