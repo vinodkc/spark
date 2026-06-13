@@ -19,12 +19,16 @@ package org.apache.spark.sql.catalyst.types.ops
 
 import java.time.{Instant, LocalDateTime, ZoneOffset}
 
+import org.apache.arrow.vector.{TimeStampNanoTZVector, TimeStampNanoVector}
+import org.apache.arrow.vector.ValueVector
+
 import org.apache.spark.SparkIllegalArgumentException
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, MutableTimestampNanos, MutableValue}
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.catalyst.types.{PhysicalDataType, PhysicalTimestampLTZNanosType, PhysicalTimestampNTZNanosType}
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
+import org.apache.spark.sql.execution.arrow.{ArrowFieldWriter, TimestampLTZNanosWriter, TimestampNTZNanosWriter}
 import org.apache.spark.sql.types.{ObjectType, TimestampLTZNanosType, TimestampNTZNanosType}
 import org.apache.spark.sql.types.ops.{TimestampLTZNanosTypeApiOps, TimestampNTZNanosTypeApiOps}
 import org.apache.spark.unsafe.types.TimestampNanosVal
@@ -121,6 +125,12 @@ case class TimestampNTZNanosTypeOps(override val t: TimestampNTZNanosType)
       "timestampNanosToLocalDateTime",
       path :: Nil,
       returnNullable = false))
+
+  override def createArrowFieldWriter(vector: ValueVector): Option[ArrowFieldWriter] =
+    vector match {
+      case v: TimeStampNanoVector => Some(new TimestampNTZNanosWriter(v))
+      case _ => None
+    }
 }
 
 /**
@@ -168,4 +178,10 @@ case class TimestampLTZNanosTypeOps(override val t: TimestampLTZNanosType)
       "timestampNanosToInstant",
       path :: Nil,
       returnNullable = false))
+
+  override def createArrowFieldWriter(vector: ValueVector): Option[ArrowFieldWriter] =
+    vector match {
+      case v: TimeStampNanoTZVector => Some(new TimestampLTZNanosWriter(v))
+      case _ => None
+    }
 }

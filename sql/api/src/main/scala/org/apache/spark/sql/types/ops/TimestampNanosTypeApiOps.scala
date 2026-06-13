@@ -19,6 +19,10 @@ package org.apache.spark.sql.types.ops
 
 import java.time.{Instant, LocalDateTime, ZoneId, ZoneOffset}
 
+import org.apache.arrow.vector.types.TimeUnit
+import org.apache.arrow.vector.types.pojo.ArrowType
+
+import org.apache.spark.SparkException
 import org.apache.spark.sql.catalyst.encoders.AgnosticEncoder
 import org.apache.spark.sql.catalyst.encoders.AgnosticEncoders.{InstantNanosEncoder, LocalDateTimeNanosEncoder}
 import org.apache.spark.sql.catalyst.util.TimestampFormatter
@@ -110,6 +114,9 @@ class TimestampNTZNanosTypeApiOps(val t: TimestampNTZNanosType) extends Timestam
   override def formatExternal(value: Any): Option[String] =
     Some(formatter.format(value.asInstanceOf[LocalDateTime]))
 
+  override def toArrowType(timeZoneId: String): Option[ArrowType] =
+    Some(new ArrowType.Timestamp(TimeUnit.NANOSECOND, null))
+
   // Mirrors RowEncoder.encoderForDataTypeDefault for TimestampNTZNanosType (SPARK-57033):
   // maps to java.time.LocalDateTime with the column precision.
   override protected def nanosEncoder: AgnosticEncoder[_] = LocalDateTimeNanosEncoder(t.precision)
@@ -145,6 +152,13 @@ class TimestampLTZNanosTypeApiOps(val t: TimestampLTZNanosType, zoneId: ZoneId)
   // internal-value format above.
   override def formatExternal(value: Any): Option[String] =
     Some(formatter.format(value.asInstanceOf[Instant]))
+
+  override def toArrowType(timeZoneId: String): Option[ArrowType] = {
+    if (timeZoneId == null) {
+      throw SparkException.internalError("Missing timezoneId where it is mandatory.")
+    }
+    Some(new ArrowType.Timestamp(TimeUnit.NANOSECOND, timeZoneId))
+  }
 
   // Mirrors RowEncoder.encoderForDataTypeDefault for TimestampLTZNanosType (SPARK-57033):
   // maps to java.time.Instant with the column precision.

@@ -202,6 +202,13 @@ object TypeApiOps {
     at match {
       case t: ArrowType.Time if t.getUnit == TimeUnit.NANOSECOND && t.getBitWidth == 8 * 8 =>
         Some(TimeType(TimeType.MICROS_PRECISION))
+      case ts: ArrowType.Timestamp
+          if ts.getUnit == TimeUnit.NANOSECOND && ts.getTimezone == null =>
+        if (!SqlApiConf.get.timestampNanosTypesEnabled) None
+        else Some(TimestampNTZNanosType(TimestampNTZNanosType.MAX_PRECISION))
+      case ts: ArrowType.Timestamp if ts.getUnit == TimeUnit.NANOSECOND =>
+        if (!SqlApiConf.get.timestampNanosTypesEnabled) None
+        else Some(TimestampLTZNanosType(TimestampLTZNanosType.MAX_PRECISION))
       // Add new framework types here
       case _ => None
     }

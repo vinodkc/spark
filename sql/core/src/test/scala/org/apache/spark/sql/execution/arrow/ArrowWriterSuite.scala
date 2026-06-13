@@ -32,7 +32,7 @@ import org.apache.spark.sql.catalyst.util.{Geography => InternalGeography, Geome
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized._
-import org.apache.spark.unsafe.types.{BinaryView, CalendarInterval, UTF8String}
+import org.apache.spark.unsafe.types.{BinaryView, CalendarInterval, TimestampNanosVal, UTF8String}
 import org.apache.spark.util.MaybeNull
 
 class ArrowWriterSuite extends SparkFunSuite {
@@ -923,5 +923,59 @@ class ArrowWriterSuite extends SparkFunSuite {
     assert(array0.numElements() === 0)
 
     writer.root.close()
+  }
+
+  test("SPARK-57159: nanosecond timestamp round-trip via Arrow") {
+    def ntz(epochMicros: Long, nanos: Short): TimestampNanosVal =
+      TimestampNanosVal.fromParts(epochMicros, nanos)
+
+    def checkNTZ(data: Seq[TimestampNanosVal], precision: Int = 9): Unit = {
+      val schema = new StructType().add("value", TimestampNTZNanosType(precision), nullable = true)
+      val writer = ArrowWriter.create(schema, null)
+      data.foreach { v => writer.write(InternalRow(v)) }
+      writer.finish()
+
+      val reader = new ArrowColumnVector(writer.root.getFieldVectors().get(0))
+      data.zipWithIndex.foreach {
+        case (null, i) => assert(reader.isNullAt(i))
+        case (v, i) =>
+          assert(!reader.isNullAt(i))
+          assert(reader.getTimestampNanosVal(i) === v)
+      }
+      writer.root.close()
+    }
+
+    def checkLTZ(data: Seq[TimestampNanosVal], tz: String = "UTC", precision: Int = 9): Unit = {
+      val schema = new StructType().add("value", TimestampLTZNanosType(precision), nullable = true)
+      val writer = ArrowWriter.create(schema, tz)
+      data.foreach { v => writer.write(InternalRow(v)) }
+      writer.finish()
+
+      val reader = new ArrowColumnVector(writer.root.getFieldVectors().get(0))
+      data.zipWithIndex.foreach {
+        case (null, i) => assert(reader.isNullAt(i))
+        case (v, i) =>
+          assert(!reader.isNullAt(i))
+          assert(reader.getTimestampNanosVal(i) === v)
+      }
+      writer.root.close()
+    }
+
+    val zero = TimestampNanosVal.ZERO
+    val typical = ntz(1_000_000L, 123)
+    val maxNanos = ntz(9_999_999L, 999)
+    val preEpoch = ntz(-1L, 0)
+    val preEpochNanos = ntz(-1_000_001L, 999)
+
+    // NTZ: precision 9 full round-trip, including null, pre-epoch, and boundary values.
+    checkNTZ(Seq(zero, typical, maxNanos, null, preEpoch, preEpochNanos))
+    // NTZ: precision 7 and 8 also map to Arrow NANOSECOND.
+    checkNTZ(Seq(zero, typical, null), precision = 7)
+    checkNTZ(Seq(zero, typical, null), precision = 8)
+
+    // LTZ: same values, different timezones.
+    checkLTZ(Seq(zero, typical, maxNanos, null, preEpoch, preEpochNanos))
+    checkLTZ(Seq(zero, typical, null), tz = "America/Los_Angeles")
+    checkLTZ(Seq(zero, typical, null), tz = "Asia/Tokyo")
   }
 }

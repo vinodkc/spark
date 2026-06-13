@@ -580,3 +580,25 @@ private[arrow] class IntervalMonthDayNanoWriter(val valueVector: IntervalMonthDa
     valueVector.setSafe(count, ci.months, ci.days, Math.multiplyExact(ci.microseconds, 1000L))
   }
 }
+
+private[sql] class TimestampNTZNanosWriter(
+    val valueVector: TimeStampNanoVector) extends ArrowFieldWriter {
+
+  override def setNull(): Unit = valueVector.setNull(count)
+
+  override def setValue(input: SpecializedGetters, ordinal: Int): Unit = {
+    val v = input.getTimestampNTZNanos(ordinal)
+    valueVector.setSafe(count, v.epochMicros * 1000L + v.nanosWithinMicro)
+  }
+}
+
+private[sql] class TimestampLTZNanosWriter(
+    val valueVector: TimeStampNanoTZVector) extends ArrowFieldWriter {
+
+  override def setNull(): Unit = valueVector.setNull(count)
+
+  override def setValue(input: SpecializedGetters, ordinal: Int): Unit = {
+    val v = input.getTimestampLTZNanos(ordinal)
+    valueVector.setSafe(count, v.epochMicros * 1000L + v.nanosWithinMicro)
+  }
+}

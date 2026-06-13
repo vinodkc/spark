@@ -19,6 +19,7 @@ package org.apache.spark.sql.util
 
 import java.time.ZoneId
 
+import org.apache.arrow.vector.types.TimeUnit
 import org.apache.arrow.vector.types.pojo.ArrowType
 
 import org.apache.spark.{SparkException, SparkFunSuite, SparkUnsupportedOperationException}
@@ -152,6 +153,43 @@ class ArrowUtilsSuite extends SparkFunSuite {
         new MetadataBuilder()
           .putBoolean("is_nested_array?", true).putString("dims", "x-y-z").build())
     )
+  }
+
+  test("nanosecond timestamp") {
+    // NTZ: all precisions in [7,9] map to Timestamp(NANOSECOND, null).
+    // Roundtrip (Spark -> Arrow -> Spark) normalises precision to 9 because Arrow carries no
+    // precision metadata; check the Arrow type directly for precisions 7 and 8.
+    Seq(7, 8).foreach { p =>
+      val arrowType = ArrowUtils.toArrowType(TimestampNTZNanosType(p), null)
+      assert(arrowType === new ArrowType.Timestamp(TimeUnit.NANOSECOND, null),
+        s"TimestampNTZNanosType($p) should map to Timestamp(NANOSECOND, null)")
+    }
+    roundtrip(TimestampNTZNanosType(9))
+
+    // LTZ: all precisions map to Timestamp(NANOSECOND, tz); roundtrip with precision 9.
+    Seq(7, 8).foreach { p =>
+      val arrowType = ArrowUtils.toArrowType(TimestampLTZNanosType(p), "UTC")
+      val ts = arrowType.asInstanceOf[ArrowType.Timestamp]
+      assert(ts.getUnit === TimeUnit.NANOSECOND)
+      assert(ts.getTimezone === "UTC",
+        s"TimestampLTZNanosType($p) should map to Timestamp(NANOSECOND, UTC)")
+    }
+    Seq("UTC", "Asia/Tokyo", LA.getId).foreach { tz =>
+      val schema = new StructType().add("value", TimestampLTZNanosType(9))
+      val arrowSchema = ArrowUtils.toArrowSchema(schema, tz, true, false)
+      val fieldType = arrowSchema.findField("value").getType.asInstanceOf[ArrowType.Timestamp]
+      assert(fieldType.getUnit === TimeUnit.NANOSECOND)
+      assert(fieldType.getTimezone === tz)
+      assert(ArrowUtils.fromArrowSchema(arrowSchema) === schema)
+    }
+
+    // LTZ requires a timeZoneId; omitting it must raise an error.
+    checkError(
+      exception = intercept[SparkException] {
+        ArrowUtils.toArrowType(TimestampLTZNanosType(9), null)
+      },
+      condition = "INTERNAL_ERROR",
+      parameters = Map("message" -> "Missing timezoneId where it is mandatory."))
   }
 
   test("struct with duplicated field names") {
