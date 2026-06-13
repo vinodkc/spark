@@ -120,6 +120,11 @@ object Cast extends QueryErrorsBase {
     case (_: TimestampNTZNanosType, TimestampNTZType) => true
     case (TimestampType, _: TimestampLTZNanosType) => true
     case (_: TimestampLTZNanosType, TimestampType) => true
+    // SPARK-57303: precision-to-precision (same-family) and cross-family nanos casts
+    case (_: TimestampNTZNanosType, _: TimestampNTZNanosType) => true
+    case (_: TimestampLTZNanosType, _: TimestampLTZNanosType) => true
+    case (_: TimestampNTZNanosType, _: TimestampLTZNanosType) => true
+    case (_: TimestampLTZNanosType, _: TimestampNTZNanosType) => true
 
     case (_: StringType, _: CalendarIntervalType) => true
     case (_: StringType, _: AnsiIntervalType) => true
@@ -263,6 +268,11 @@ object Cast extends QueryErrorsBase {
     case (_: TimestampNTZNanosType, TimestampNTZType) => true
     case (TimestampType, _: TimestampLTZNanosType) => true
     case (_: TimestampLTZNanosType, TimestampType) => true
+    // SPARK-57303: precision-to-precision (same-family) and cross-family nanos casts
+    case (_: TimestampNTZNanosType, _: TimestampNTZNanosType) => true
+    case (_: TimestampLTZNanosType, _: TimestampLTZNanosType) => true
+    case (_: TimestampNTZNanosType, _: TimestampLTZNanosType) => true
+    case (_: TimestampLTZNanosType, _: TimestampNTZNanosType) => true
 
     case (_: StringType, DateType) => true
     case (_: StringType, _: TimeType) => true
@@ -355,6 +365,9 @@ object Cast extends QueryErrorsBase {
     // the LTZ string parse/render depends on the session time zone.
     case (_: StringType, _: TimestampLTZNanosType) => true
     case (_: TimestampLTZNanosType, _: StringType) => true
+    // SPARK-57303: cross-family nanos reinterprets local/absolute time the same way micros do.
+    case (_: TimestampNTZNanosType, _: TimestampLTZNanosType) => true
+    case (_: TimestampLTZNanosType, _: TimestampNTZNanosType) => true
     case (ArrayType(fromType, _), ArrayType(toType, _)) => needsTimeZone(fromType, toType)
     case (MapType(fromKey, fromValue, _), MapType(toKey, toValue, _)) =>
       needsTimeZone(fromKey, toKey) || needsTimeZone(fromValue, toValue)
@@ -400,6 +413,19 @@ object Cast extends QueryErrorsBase {
   }
 
   /**
+   * Returns the fractional-second precision of a timestamp type, or None for non-timestamp
+   * datetime types (DateType, CalendarIntervalType, etc.):
+   *   TimestampType / TimestampNTZType        -> Some(6)  (microsecond = 10^-6 s)
+   *   TimestampLTZNanosType(p) / NTZNanos(p)  -> Some(p)  (p in 7..9)
+   */
+  private def fractionalPrecision(t: DataType): Option[Int] = t match {
+    case TimestampType | TimestampNTZType => Some(6)
+    case t: TimestampNTZNanosType => Some(t.precision)
+    case t: TimestampLTZNanosType => Some(t.precision)
+    case _ => None
+  }
+
+  /**
    * Returns true iff we can cast the `from` type to `to` type as per the ANSI SQL.
    * In practice, the behavior is mostly the same as PostgreSQL. It disallows certain unreasonable
    * type conversions such as converting `string` to `int` or `double` to `boolean`.
@@ -410,12 +436,16 @@ object Cast extends QueryErrorsBase {
     case (_: NumericType, _: NumericType) => true
     case (_: AtomicType, _: StringType) => true
     case (_: CalendarIntervalType, _: StringType) => true
-    // SPARK-57293: narrowing a nanosecond-precision timestamp to its microsecond counterpart
-    // drops the sub-microsecond digits, so it is not allowed as a (silent) store assignment.
-    // This conversion stays explicit-only.
-    case (_: TimestampNTZNanosType, TimestampNTZType) => false
-    case (_: TimestampLTZNanosType, TimestampType) => false
-    case (_: DatetimeType, _: DatetimeType) => true
+    // SPARK-57303: block any fractional-second precision narrowing across the timestamp family.
+    // fractionalPrecision: TimestampType/NTZ -> 6, LTZNanos(p)/NTZNanos(p) -> p, others -> None.
+    // When both sides are timestamp types the assignment is allowed iff precision is non-decreasing
+    // (lossless widening). The SPARK-57293 cases (NTZNanos -> NTZType, LTZNanos -> TimestampType)
+    // are subsumed here: their source precision (7-9) exceeds the target (6), so they return false.
+    case (_: DatetimeType, _: DatetimeType) =>
+      (fractionalPrecision(from), fractionalPrecision(to)) match {
+        case (Some(p1), Some(p2)) => p1 <= p2
+        case _ => true
+      }
 
     case (ArrayType(fromType, fn), ArrayType(toType, tn)) =>
       resolvableNullability(fn, tn) && canANSIStoreAssign(fromType, toType)
@@ -815,6 +845,18 @@ case class Cast(
       buildCast[TimestampNanosVal](_, v => v.epochMicros)
   }
 
+  // SPARK-57303: 10^i for i in {0,1,2}; avoids floating-point in truncateNanosVal.
+  private[this] val NANOS_TRUNC_FACTORS: Array[Int] = Array(1, 10, 100)
+
+  // Truncate v.nanosWithinMicro to the given fractional-second precision.
+  // factor = 10^(9 - precision): precision 9 -> 1 (identity), 8 -> 10, 7 -> 100.
+  private[this] def truncateNanosVal(v: TimestampNanosVal, precision: Int): TimestampNanosVal = {
+    val factor = NANOS_TRUNC_FACTORS(TimestampNTZNanosType.NANOS_PRECISION - precision)
+    if (factor == 1) v
+    else TimestampNanosVal.fromParts(v.epochMicros,
+      ((v.nanosWithinMicro / factor) * factor).toShort)
+  }
+
   private[this] def castToTimestampLTZNanos(
       from: DataType,
       precision: Int): Any => Any = from match {
@@ -827,6 +869,16 @@ case class Cast(
         })
     case TimestampType =>
       buildCast[Long](_, m => TimestampNanosVal.fromParts(m, 0.toShort))
+    // SPARK-57303: same-family precision change; truncate nanosWithinMicro if narrowing
+    case _: TimestampLTZNanosType =>
+      buildCast[TimestampNanosVal](_, v => truncateNanosVal(v, precision))
+    // SPARK-57303: NTZ -> LTZ: reinterpret local time in session zone as an absolute instant
+    case _: TimestampNTZNanosType =>
+      buildCast[TimestampNanosVal](_, v =>
+        truncateNanosVal(
+          TimestampNanosVal.fromParts(convertTz(v.epochMicros, zoneId, ZoneOffset.UTC),
+            v.nanosWithinMicro),
+          precision))
   }
 
   private[this] def castToTimestampNTZNanos(
@@ -841,6 +893,16 @@ case class Cast(
         })
     case TimestampNTZType =>
       buildCast[Long](_, m => TimestampNanosVal.fromParts(m, 0.toShort))
+    // SPARK-57303: same-family precision change; truncate nanosWithinMicro if narrowing
+    case _: TimestampNTZNanosType =>
+      buildCast[TimestampNanosVal](_, v => truncateNanosVal(v, precision))
+    // SPARK-57303: LTZ -> NTZ: convert the absolute instant to local time in session zone
+    case _: TimestampLTZNanosType =>
+      buildCast[TimestampNanosVal](_, v =>
+        truncateNanosVal(
+          TimestampNanosVal.fromParts(convertTz(v.epochMicros, ZoneOffset.UTC, zoneId),
+            v.nanosWithinMicro),
+          precision))
   }
 
   private[this] def decimalToTimestamp(d: Decimal): Long = {
@@ -1868,6 +1930,28 @@ case class Cast(
     case TimestampType =>
       (c, evPrim, evNull) =>
         code"$evPrim = TimestampNanosVal.fromParts($c, (short) 0);"
+    // SPARK-57303: same-family precision change
+    case _: TimestampLTZNanosType =>
+      val factor = math.pow(10.0, TimestampNTZNanosType.NANOS_PRECISION - precision).toInt
+      (c, evPrim, _) =>
+        code"""$evPrim = TimestampNanosVal.fromParts(
+          $c.epochMicros, (short)(($c.nanosWithinMicro / $factor) * $factor));"""
+    // SPARK-57303: NTZ -> LTZ: reinterpret local time in session zone as an absolute instant
+    case _: TimestampNTZNanosType =>
+      val factor = math.pow(10.0, TimestampNTZNanosType.NANOS_PRECISION - precision).toInt
+      val zoneIdClass = classOf[ZoneId]
+      val zid = JavaCode.global(
+        ctx.addReferenceObj("zoneId", zoneId, zoneIdClass.getName),
+        zoneIdClass)
+      (c, evPrim, _) => {
+        val micros = ctx.freshVariable("micros", classOf[Long])
+        code"""
+          long $micros =
+            $dateTimeUtilsCls.convertTz($c.epochMicros, $zid, java.time.ZoneOffset.UTC);
+          $evPrim = TimestampNanosVal.fromParts($micros,
+            (short)(($c.nanosWithinMicro / $factor) * $factor));
+        """
+      }
   }
 
   private[this] def castToTimestampNTZNanosCode(
@@ -1897,6 +1981,28 @@ case class Cast(
     case TimestampNTZType =>
       (c, evPrim, evNull) =>
         code"$evPrim = TimestampNanosVal.fromParts($c, (short) 0);"
+    // SPARK-57303: same-family precision change
+    case _: TimestampNTZNanosType =>
+      val factor = math.pow(10.0, TimestampNTZNanosType.NANOS_PRECISION - precision).toInt
+      (c, evPrim, _) =>
+        code"""$evPrim = TimestampNanosVal.fromParts(
+          $c.epochMicros, (short)(($c.nanosWithinMicro / $factor) * $factor));"""
+    // SPARK-57303: LTZ -> NTZ: convert the absolute instant to local time in session zone
+    case _: TimestampLTZNanosType =>
+      val factor = math.pow(10.0, TimestampNTZNanosType.NANOS_PRECISION - precision).toInt
+      val zoneIdClass = classOf[ZoneId]
+      val zid = JavaCode.global(
+        ctx.addReferenceObj("zoneId", zoneId, zoneIdClass.getName),
+        zoneIdClass)
+      (c, evPrim, _) => {
+        val micros = ctx.freshVariable("micros", classOf[Long])
+        code"""
+          long $micros =
+            $dateTimeUtilsCls.convertTz($c.epochMicros, java.time.ZoneOffset.UTC, $zid);
+          $evPrim = TimestampNanosVal.fromParts($micros,
+            (short)(($c.nanosWithinMicro / $factor) * $factor));
+        """
+      }
   }
 
   private[this] def castToIntervalCode(from: DataType): CastFunction = from match {

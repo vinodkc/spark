@@ -69,6 +69,15 @@ private[sql] object UpCastRule {
 
     case (from: UserDefinedType[_], to: UserDefinedType[_]) if to.acceptsType(from) => true
 
+    // SPARK-57303: lossless precision widening within the nanosecond timestamp tier.
+    // Same-family: NTZ(p1) -> NTZ(p2) and LTZ(p1) -> LTZ(p2) are up-casts when p1 <= p2.
+    // Cross-family: mirrors the bidirectional micros rule (TimestampNTZType <-> TimestampType).
+    // Micros <-> nanos are NOT up-casts (see SPARK-57293 test), only nanos <-> nanos.
+    case (f: TimestampNTZNanosType, t: TimestampNTZNanosType) => f.precision <= t.precision
+    case (f: TimestampLTZNanosType, t: TimestampLTZNanosType) => f.precision <= t.precision
+    case (f: TimestampNTZNanosType, t: TimestampLTZNanosType) => f.precision <= t.precision
+    case (f: TimestampLTZNanosType, t: TimestampNTZNanosType) => f.precision <= t.precision
+
     case _ => false
   }
 

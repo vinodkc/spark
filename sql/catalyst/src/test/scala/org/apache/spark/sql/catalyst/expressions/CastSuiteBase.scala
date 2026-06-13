@@ -748,6 +748,103 @@ abstract class CastSuiteBase extends SparkFunSuite with ExpressionEvalHelper {
     }
   }
 
+  test("SPARK-57303: nanos precision-to-precision and cross-family up-cast and store-assignment") {
+    foreachNanosPrecision { p1 =>
+      foreachNanosPrecision { p2 =>
+        val widening = p1 <= p2
+        // canUpCast: widening precision (p1 <= p2) is an up-cast; narrowing is not.
+        assert(Cast.canUpCast(TimestampNTZNanosType(p1), TimestampNTZNanosType(p2)) == widening)
+        assert(Cast.canUpCast(TimestampLTZNanosType(p1), TimestampLTZNanosType(p2)) == widening)
+        assert(Cast.canUpCast(TimestampNTZNanosType(p1), TimestampLTZNanosType(p2)) == widening)
+        assert(Cast.canUpCast(TimestampLTZNanosType(p1), TimestampNTZNanosType(p2)) == widening)
+        // canANSIStoreAssign: same contract; widening is allowed, narrowing is blocked.
+        assert(Cast.canANSIStoreAssign(TimestampNTZNanosType(p1), TimestampNTZNanosType(p2)) ==
+          widening)
+        assert(Cast.canANSIStoreAssign(TimestampLTZNanosType(p1), TimestampLTZNanosType(p2)) ==
+          widening)
+        assert(Cast.canANSIStoreAssign(TimestampNTZNanosType(p1), TimestampLTZNanosType(p2)) ==
+          widening)
+        assert(Cast.canANSIStoreAssign(TimestampLTZNanosType(p1), TimestampNTZNanosType(p2)) ==
+          widening)
+      }
+    }
+    // Micros <-> nanos boundary: still not an up-cast (SPARK-57293 invariant preserved).
+    foreachNanosPrecision { p =>
+      assert(!Cast.canUpCast(TimestampNTZType, TimestampNTZNanosType(p)))
+      assert(!Cast.canUpCast(TimestampType, TimestampLTZNanosType(p)))
+      assert(!Cast.canUpCast(TimestampNTZNanosType(p), TimestampNTZType))
+      assert(!Cast.canUpCast(TimestampLTZNanosType(p), TimestampType))
+    }
+  }
+
+  test("SPARK-57303: nanos precision-to-precision cast evaluation") {
+    // Build a source value that is normalized for `src` precision but exercises the maximum
+    // number of sub-microsecond digits, so narrowing casts actually truncate something.
+    //   src=7: nanosWithinMicro=100 (1 significant sub-micro digit)
+    //   src=8: nanosWithinMicro=120 (2 significant sub-micro digits)
+    //   src=9: nanosWithinMicro=123 (3 significant sub-micro digits)
+    // When src == tgt the identity path is taken and the value is unchanged (correct by
+    // construction since the source value is already valid for src precision).
+    foreachNanosPrecision { src =>
+      val srcNanos =
+        src match { case 7 => 100.toShort; case 8 => 120.toShort; case _ => 123.toShort }
+      val base = nanosVal(1_000_000L, srcNanos)
+      foreachNanosPrecision { tgt =>
+        val factor = math.pow(10.0, 9 - tgt).toInt
+        val expectedNanos = ((srcNanos / factor) * factor).toShort
+        val expected = nanosVal(1_000_000L, expectedNanos)
+        // NTZ same-family
+        checkEvaluation(
+          cast(Literal.create(base, TimestampNTZNanosType(src)), TimestampNTZNanosType(tgt)),
+          expected)
+        // LTZ same-family (UTC so no timezone shift on epochMicros)
+        checkEvaluation(
+          cast(Literal.create(base, TimestampLTZNanosType(src)), TimestampLTZNanosType(tgt),
+            UTC_OPT),
+          expected)
+        // Null input
+        checkEvaluation(
+          cast(Literal.create(null, TimestampNTZNanosType(src)), TimestampNTZNanosType(tgt)), null)
+        checkEvaluation(
+          cast(Literal.create(null, TimestampLTZNanosType(src)), TimestampLTZNanosType(tgt),
+            UTC_OPT), null)
+      }
+    }
+  }
+
+  test("SPARK-57303: cross-family nanos cast evaluation (NTZ <-> LTZ)") {
+    // Use UTC so the cross-family conversion does not shift epochMicros, letting us focus on
+    // the nanosWithinMicro truncation logic.  (Non-UTC timezone shifts are covered by the micros
+    // cross-family tests which share the same convertTz path.)
+    foreachNanosPrecision { src =>
+      val srcNanos =
+        src match { case 7 => 100.toShort; case 8 => 120.toShort; case _ => 123.toShort }
+      val base = nanosVal(1_000_000L, srcNanos)
+      foreachNanosPrecision { tgt =>
+        val factor = math.pow(10.0, 9 - tgt).toInt
+        val expectedNanos = ((srcNanos / factor) * factor).toShort
+        val expected = nanosVal(1_000_000L, expectedNanos)
+        // NTZ -> LTZ
+        checkEvaluation(
+          cast(Literal.create(base, TimestampNTZNanosType(src)), TimestampLTZNanosType(tgt),
+            UTC_OPT),
+          expected)
+        // LTZ -> NTZ
+        checkEvaluation(
+          cast(Literal.create(base, TimestampLTZNanosType(src)), TimestampNTZNanosType(tgt),
+            UTC_OPT),
+          expected)
+        // Null input
+        checkEvaluation(
+          cast(Literal.create(null, TimestampNTZNanosType(src)), TimestampLTZNanosType(tgt),
+            UTC_OPT), null)
+        checkEvaluation(
+          cast(Literal.create(null, TimestampLTZNanosType(src)), TimestampNTZNanosType(tgt),
+            UTC_OPT), null)
+      }
+    }
+  }
+
   test("SPARK-40389: canUpCast: return false if casting decimal to integral types can cause" +
     " overflow") {
     Seq(ByteType, ShortType, IntegerType, LongType).foreach { integralType =>
