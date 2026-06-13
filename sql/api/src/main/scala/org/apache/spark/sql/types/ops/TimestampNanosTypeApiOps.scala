@@ -58,16 +58,9 @@ abstract class TimestampNanosTypeApiOps extends TypeApiOps with DataTypeErrorsBa
 
   // ==================== String Formatting ====================
 
-  // Row JSON (Row.json / Row.prettyJson) holds the external Row value (java.time.Instant for LTZ,
-  // java.time.LocalDateTime for NTZ); each subclass overrides the single-arg formatExternal to
-  // render it through the same formatter as its zone-aware cast-to-string, so Row JSON shows the
-  // nanosecond value rather than silently truncating to microseconds via the legacy path.
-
-  // The Hive result path (HiveResult.toHiveString) renders nanosecond timestamps through its own
-  // zone-aware default formatter, so return None here to fall through to it rather than to the
-  // subclass single-arg rendering. This is a temporary split until nanos external rendering is
-  // unified across the zone-less (Row JSON) and zone-aware (Hive) paths.
-  override def formatExternal(value: Any, nested: Boolean): Option[String] = None
+  // Both Row JSON (Row.json / Row.prettyJson) and Hive output (HiveResult.toHiveString) render
+  // the external value through the single-arg formatExternal overridden by each concrete subclass.
+  // The two-arg overload defaults to delegating to the single-arg one (TypeApiOps default).
 
   override def toSQLValue(v: Any): String = s"$sqlTypeName '${format(v)}'"
 
