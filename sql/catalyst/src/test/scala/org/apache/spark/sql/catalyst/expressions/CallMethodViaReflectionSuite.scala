@@ -210,6 +210,15 @@ class CallMethodViaReflectionSuite extends SparkFunSuite with ExpressionEvalHelp
         "confRequirement" -> "Every entry must be a valid regular expression."))
   }
 
+  test("SPARK-58209: CallMethodViaReflection is stateful and produces independent fresh copies") {
+    val expr = createExpr("java.util.UUID", "randomUUID")
+    assert(expr.stateful)
+    val copy1 = expr.freshCopyIfContainsStatefulExpression()
+    val copy2 = expr.freshCopyIfContainsStatefulExpression()
+    assert(copy1 ne expr)
+    assert(copy2 ne copy1)
+  }
+
   test("escaping of class and method names") {
     GenerateUnsafeProjection.generate(
       CallMethodViaReflection(Seq(Literal("\"quote"), Literal("\"quote"), Literal(null))) :: Nil)

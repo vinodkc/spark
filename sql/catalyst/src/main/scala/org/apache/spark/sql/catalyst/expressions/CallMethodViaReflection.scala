@@ -207,6 +207,10 @@ case class CallMethodViaReflection(
   @transient lazy val method: Method = CallMethodViaReflection
     .findMethod(className, methodName, argExprs.map(_.dataType).toImmutableArraySeq).orNull
 
+  // buffer is written per-row then passed to method.invoke; concurrent tasks sharing
+  // the same instance would overwrite each other's arguments (SPARK-58154).
+  override def stateful: Boolean = true
+
   /** A temporary buffer used to hold intermediate results returned by children. */
   @transient private lazy val buffer = new Array[Object](argExprs.length)
 

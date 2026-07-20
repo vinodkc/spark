@@ -193,6 +193,15 @@ class XPathExpressionSuite extends SparkFunSuite with ExpressionEvalHelper {
     testNullAndErrorBehavior(testExpr)
   }
 
+  test("SPARK-58209: XPathBoolean is stateful and produces independent fresh copies") {
+    val expr = XPathBoolean(Literal("<a><b>1</b></a>"), Literal("a/b"))
+    assert(expr.stateful)
+    val copy1 = expr.freshCopyIfContainsStatefulExpression()
+    val copy2 = expr.freshCopyIfContainsStatefulExpression()
+    assert(copy1 ne expr)
+    assert(copy2 ne copy1)
+  }
+
   test("accept only literal path") {
     def testExpr(exprCtor: (Expression, Expression) => Expression): Unit = {
       // Validate that literal (technically this is foldable) paths are supported

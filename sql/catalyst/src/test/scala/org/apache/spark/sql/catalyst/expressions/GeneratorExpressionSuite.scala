@@ -19,6 +19,7 @@ package org.apache.spark.sql.catalyst.expressions
 
 import org.apache.spark.{SPARK_DOC_ROOT, SparkFunSuite}
 import org.apache.spark.sql.AnalysisException
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.DataTypeMismatch
 import org.apache.spark.sql.catalyst.util.GenericArrayData
@@ -216,5 +217,16 @@ class GeneratorExpressionSuite extends SparkFunSuite with ExpressionEvalHelper {
     assert(Unnest(Seq(int_array), withOrdinality = false).toString === "unnest(array(1, 2, 3))")
     assert(Unnest(Seq(int_array), withOrdinality = true).toString ===
       "unnest(array(1, 2, 3), WITH ORDINALITY)")
+  }
+
+  test("SPARK-58209: UserDefinedGenerator is stateful and produces independent fresh copies") {
+    val schema = StructType(StructField("v", IntegerType) :: Nil)
+    val fn: Row => IterableOnce[InternalRow] = _ => Seq.empty
+    val expr = UserDefinedGenerator(schema, fn, Literal(1) :: Nil)
+    assert(expr.stateful)
+    val copy1 = expr.freshCopyIfContainsStatefulExpression()
+    val copy2 = expr.freshCopyIfContainsStatefulExpression()
+    assert(copy1 ne expr)
+    assert(copy2 ne copy1)
   }
 }

@@ -63,6 +63,10 @@ abstract class XPathExtract
   def xml: Expression
   def path: Expression
 
+  // Each instance owns a UDFXPathUtil with mutable DocumentBuilder / XPathExpression state;
+  // copies must not share it (SPARK-58154).
+  override def stateful: Boolean = true
+
   @transient protected lazy val pathUTF8String: UTF8String = path.eval().asInstanceOf[UTF8String]
 
   protected def evaluator: XPathEvaluator
