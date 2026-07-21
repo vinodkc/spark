@@ -16993,6 +16993,74 @@ def regexp_instr(
 
 
 @_try_remote_functions
+def regexp_named_groups(str: "ColumnOrName", regexp: "ColumnOrName") -> Column:
+    r"""Extracts all named capture groups from the first match of `regexp` in `str` and returns
+    them as a map of group name to matched string.
+
+    Returns null if there is no match. Returns an empty map if `regexp` has no named capture
+    groups. Named groups use Java regex syntax: ``(?<name>...)``.
+
+    .. versionadded:: 4.3.0
+
+    .. versionchanged:: 4.3.0
+        Supports Spark Connect.
+
+    Parameters
+    ----------
+    str : :class:`~pyspark.sql.Column` or column name
+        target column to work on.
+    regexp : :class:`~pyspark.sql.Column` or column name
+        regex pattern with named capture groups (e.g. ``r'(?<year>\d+)-(?<month>\d+)'``).
+
+    Returns
+    -------
+    :class:`~pyspark.sql.Column`
+        map of group name to matched string, or null if no match.
+
+    See Also
+    --------
+    :meth:`pyspark.sql.functions.regexp_extract`
+    :meth:`pyspark.sql.functions.regexp_extract_all`
+
+    Examples
+    --------
+    Example 1: Extract named groups from a matching string.
+
+    >>> from pyspark.sql import functions as sf
+    >>> df = spark.createDataFrame([("2023-04-15",)], ["str"])
+    >>> df.select(sf.regexp_named_groups(
+    ...     "str", sf.lit(r"(?<year>\d+)-(?<month>\d+)-(?<day>\d+)"))).show()
+    +--------------------------------------------------+
+    |regexp_named_groups(str, (?<year>...\d+)-...)     |
+    +--------------------------------------------------+
+    |       {year -> 2023, month -> 04, day -> 15}     |
+    +--------------------------------------------------+
+
+    Example 2: Returns null when the pattern does not match.
+
+    >>> df2 = spark.createDataFrame([("no match",)], ["str"])
+    >>> df2.select(sf.regexp_named_groups(
+    ...     "str", sf.lit(r"(?<x>\d+)"))).show()
+    +-----------------------------+
+    |regexp_named_groups(str, ...)|
+    +-----------------------------+
+    |                         NULL|
+    +-----------------------------+
+
+    Example 3: Returns empty map when pattern has no named groups.
+
+    >>> df3 = spark.createDataFrame([("abc",)], ["str"])
+    >>> df3.select(sf.regexp_named_groups("str", sf.lit(r"(\d+)"))).show()
+    +-----------------------------+
+    |regexp_named_groups(str, ...)|
+    +-----------------------------+
+    |                           {}|
+    +-----------------------------+
+    """
+    return _invoke_function_over_columns("regexp_named_groups", str, regexp)
+
+
+@_try_remote_functions
 def initcap(col: "ColumnOrName") -> Column:
     """Translate the first letter of each word to upper case in the sentence.
 

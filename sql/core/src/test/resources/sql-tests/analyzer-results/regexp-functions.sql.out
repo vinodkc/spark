@@ -514,3 +514,45 @@ SELECT regexp_instr('abc', col0, 1) FROM VALUES(') ?') AS t(col0)
 Project [regexp_instr(abc, col0#x, 1) AS regexp_instr(abc, col0, 1)#x]
 +- SubqueryAlias t
    +- LocalRelation [col0#x]
+
+
+-- !query
+SELECT regexp_named_groups('2023-04-15', r'(?<year>\d+)-(?<month>\d+)-(?<day>\d+)')
+-- !query analysis
+Project [regexp_named_groups(2023-04-15, (?<year>\d+)-(?<month>\d+)-(?<day>\d+)) AS regexp_named_groups(2023-04-15, (?<year>\d+)-(?<month>\d+)-(?<day>\d+))#x]
++- OneRowRelation
+
+
+-- !query
+SELECT regexp_named_groups('no match', r'(?<x>\d+)')
+-- !query analysis
+Project [regexp_named_groups(no match, (?<x>\d+)) AS regexp_named_groups(no match, (?<x>\d+))#x]
++- OneRowRelation
+
+
+-- !query
+SELECT regexp_named_groups('abc', r'([a-z]+)')
+-- !query analysis
+Project [regexp_named_groups(abc, ([a-z]+)) AS regexp_named_groups(abc, ([a-z]+))#x]
++- OneRowRelation
+
+
+-- !query
+SELECT regexp_named_groups(null, r'(?<x>\d+)')
+-- !query analysis
+Project [regexp_named_groups(cast(null as string), (?<x>\d+)) AS regexp_named_groups(NULL, (?<x>\d+))#x]
++- OneRowRelation
+
+
+-- !query
+SELECT regexp_named_groups('abc', null)
+-- !query analysis
+Project [regexp_named_groups(abc, cast(null as string)) AS regexp_named_groups(abc, NULL)#x]
++- OneRowRelation
+
+
+-- !query
+SELECT regexp_named_groups('a', r'(?<n>\d+)?(?<s>[a-z]+)')
+-- !query analysis
+Project [regexp_named_groups(a, (?<n>\d+)?(?<s>[a-z]+)) AS regexp_named_groups(a, (?<n>\d+)?(?<s>[a-z]+))#x]
++- OneRowRelation

@@ -730,3 +730,51 @@ org.apache.spark.SparkRuntimeException
     "value" : "') ?'"
   }
 }
+
+
+-- !query
+SELECT regexp_named_groups('2023-04-15', r'(?<year>\d+)-(?<month>\d+)-(?<day>\d+)')
+-- !query schema
+struct<regexp_named_groups(2023-04-15, (?<year>\d+)-(?<month>\d+)-(?<day>\d+)):map<string,string>>
+-- !query output
+{"day":"15","month":"04","year":"2023"}
+
+
+-- !query
+SELECT regexp_named_groups('no match', r'(?<x>\d+)')
+-- !query schema
+struct<regexp_named_groups(no match, (?<x>\d+)):map<string,string>>
+-- !query output
+NULL
+
+
+-- !query
+SELECT regexp_named_groups('abc', r'([a-z]+)')
+-- !query schema
+struct<regexp_named_groups(abc, ([a-z]+)):map<string,string>>
+-- !query output
+{}
+
+
+-- !query
+SELECT regexp_named_groups(null, r'(?<x>\d+)')
+-- !query schema
+struct<regexp_named_groups(NULL, (?<x>\d+)):map<string,string>>
+-- !query output
+NULL
+
+
+-- !query
+SELECT regexp_named_groups('abc', null)
+-- !query schema
+struct<regexp_named_groups(abc, NULL):map<string,string>>
+-- !query output
+NULL
+
+
+-- !query
+SELECT regexp_named_groups('a', r'(?<n>\d+)?(?<s>[a-z]+)')
+-- !query schema
+struct<regexp_named_groups(a, (?<n>\d+)?(?<s>[a-z]+)):map<string,string>>
+-- !query output
+{"n":null,"s":"a"}

@@ -80,3 +80,11 @@ SELECT regexp_instr('1a 2b 14m', '\\d{2}(a|b|m)');
 SELECT regexp_instr('abc', null);
 SELECT regexp_instr(null, 'b');
 SELECT regexp_instr('abc', col0, 1) FROM VALUES(') ?') AS t(col0);
+
+-- regexp_named_groups
+SELECT regexp_named_groups('2023-04-15', r'(?<year>\d+)-(?<month>\d+)-(?<day>\d+)');
+SELECT regexp_named_groups('no match', r'(?<x>\d+)');
+SELECT regexp_named_groups('abc', r'([a-z]+)');
+SELECT regexp_named_groups(null, r'(?<x>\d+)');
+SELECT regexp_named_groups('abc', null);
+SELECT regexp_named_groups('a', r'(?<n>\d+)?(?<s>[a-z]+)');

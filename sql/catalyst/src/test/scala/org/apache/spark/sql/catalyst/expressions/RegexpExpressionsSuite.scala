@@ -693,6 +693,47 @@ class RegexpExpressionsSuite extends SparkFunSuite with ExpressionEvalHelper {
     )
   }
 
+  test("RegExpNamedGroups: extractGroupNames helper") {
+    assert(RegExpNamedGroups.extractGroupNames("(?<a>\\d+)-(?<b>\\d+)") === Seq("a", "b"))
+    assert(RegExpNamedGroups.extractGroupNames("(\\d+)-(\\d+)") === Seq.empty)
+    assert(RegExpNamedGroups.extractGroupNames("(?<a>\\d+)(?:\\w+)(?<b>\\d+)") === Seq("a", "b"))
+    assert(RegExpNamedGroups.extractGroupNames("") === Seq.empty)
+  }
+
+  test("RegExpNamedGroups: eval") {
+    def check(str: String, pattern: String, expected: Any): Unit = {
+      checkEvaluation(
+        RegExpNamedGroups(Literal(str), Literal(pattern)),
+        expected)
+    }
+
+    // match with named groups
+    check(
+      "2023-04-15",
+      "(?<y>\\d+)-(?<m>\\d+)-(?<d>\\d+)",
+      create_map("y" -> "2023", "m" -> "04", "d" -> "15"))
+
+    // no match -> null
+    check("no match", "(?<x>\\d+)", null)
+
+    // unnamed groups, but pattern matches -> empty map
+    check("abc", "([a-z]+)", create_map())
+
+    // optional group that doesn't match -> null value in map
+    check("a", "(?<n>\\d+)?(?<s>[a-z]+)",
+      create_map(Seq("n", "s"), Seq(null, "a")))
+
+    // null str -> null
+    checkEvaluation(
+      RegExpNamedGroups(Literal.create(null, StringType), Literal("(?<x>\\d+)")),
+      null)
+
+    // null pattern -> null
+    checkEvaluation(
+      RegExpNamedGroups(Literal("abc"), Literal.create(null, StringType)),
+      null)
+  }
+
   test("RegExpReplace: fails analysis if pos is not a constant") {
     val s = $"s".string.at(0)
     val p = $"p".string.at(1)

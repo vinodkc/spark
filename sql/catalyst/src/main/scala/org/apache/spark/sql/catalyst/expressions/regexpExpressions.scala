@@ -35,7 +35,7 @@ import org.apache.spark.sql.catalyst.expressions.codegen._
 import org.apache.spark.sql.catalyst.expressions.codegen.Block._
 import org.apache.spark.sql.catalyst.trees.BinaryLike
 import org.apache.spark.sql.catalyst.trees.TreePattern.{LIKE_FAMLIY, REGEXP_EXTRACT_FAMILY, REGEXP_REPLACE, TreePattern}
-import org.apache.spark.sql.catalyst.util.{CollationSupport, GenericArrayData, StringUtils}
+import org.apache.spark.sql.catalyst.util.{ArrayBasedMapBuilder, CollationSupport, GenericArrayData, StringUtils}
 import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.types.{StringTypeBinaryLcase, StringTypeWithCollation}
@@ -1170,6 +1170,137 @@ case class RegExpInStr(subject: Expression, regexp: Expression, idx: Expression)
   override protected def withNewChildrenInternal(
       newFirst: Expression, newSecond: Expression, newThird: Expression): RegExpInStr =
     copy(subject = newFirst, regexp = newSecond, idx = newThird)
+}
+
+object RegExpNamedGroups {
+  // Meta-regex to extract named capture group names from a pattern string.
+  // Works on Java 7+; Pattern.namedGroups() requires Java 20.
+  private val META: Pattern = Pattern.compile("\\(\\?<([a-zA-Z][a-zA-Z0-9_]*)>")
+
+  def extractGroupNames(patternStr: String): Seq[String] = {
+    val m = META.matcher(patternStr)
+    val names = new ArrayBuffer[String]()
+    while (m.find()) names += m.group(1)
+    names.toSeq
+  }
+
+  // Java-friendly variant returning a plain array (used by generated code).
+  def extractGroupNamesArray(patternStr: String): Array[String] =
+    extractGroupNames(patternStr).toArray
+}
+
+// scalastyle:off line.size.limit
+@ExpressionDescription(
+  usage = """
+    _FUNC_(str, regexp) - Extracts all named capture groups from the first match of `regexp` in
+    `str` and returns them as a map of group name to matched string. Returns null if there is no
+    match. Returns an empty map if `regexp` has no named capture groups.
+  """,
+  arguments = """
+    Arguments:
+      * str - a string expression.
+      * regexp - a string representing a regular expression with named capture groups using Java
+          syntax: {@code (?<name>...)}. The regex string should be a Java regular expression.<br><br>
+          Since Spark 2.0, string literals (including regex patterns) are unescaped in our SQL
+          parser, see the unescaping rules at <a href="https://spark.apache.org/docs/latest/sql-ref-literals.html#string-literal">String Literal</a>.
+          For example, to match "\abc", a regular expression for `regexp` can be "^\\abc$".<br><br>
+          It's recommended to use a raw string literal (with the `r` prefix) to avoid escaping
+          special characters in the pattern string if exists.
+  """,
+  examples = """
+    Examples:
+      > SELECT _FUNC_('2023-04-15', r'(?<year>\d+)-(?<month>\d+)-(?<day>\d+)');
+       {"year":"2023","month":"04","day":"15"}
+      > SELECT _FUNC_('no match', r'(?<x>\d+)');
+       NULL
+      > SELECT _FUNC_('abc', r'([a-z]+)');
+       {}
+  """,
+  since = "4.3.0",
+  group = "string_funcs")
+// scalastyle:on line.size.limit
+case class RegExpNamedGroups(subject: Expression, regexp: Expression)
+  extends BinaryExpression with ImplicitCastInputTypes {
+  override def nullIntolerant: Boolean = true
+
+  @transient private var lastRegex: UTF8String = _
+  @transient private var pattern: Pattern = _
+
+  private lazy val mapBuilder =
+    new ArrayBasedMapBuilder(subject.dataType, subject.dataType)
+
+  override def stateful: Boolean = true
+
+  final override val nodePatterns: Seq[TreePattern] = Seq(REGEXP_EXTRACT_FAMILY)
+
+  override def inputTypes: Seq[AbstractDataType] =
+    Seq(StringTypeBinaryLcase, StringTypeWithCollation)
+  override def left: Expression = subject
+  override def right: Expression = regexp
+
+  final lazy val collationId: Int = subject.dataType.asInstanceOf[StringType].collationId
+
+  override def dataType: DataType =
+    MapType(subject.dataType, subject.dataType, valueContainsNull = true)
+
+  override def nullable: Boolean = true
+
+  override def prettyName: String = "regexp_named_groups"
+
+  override def nullSafeEval(s: Any, p: Any): Any = {
+    if (p != lastRegex) {
+      val pr = RegExpUtils.getPatternAndLastRegex(p, prettyName, collationId)
+      pattern = pr._1
+      lastRegex = pr._2
+    }
+    val names = RegExpNamedGroups.extractGroupNames(lastRegex.toString)
+    val matcher = pattern.matcher(s.toString)
+    if (!matcher.find()) return null
+
+    names.foreach { name =>
+      val g = matcher.group(name)
+      mapBuilder.put(
+        UTF8String.fromString(name),
+        if (g == null) null else UTF8String.fromString(g))
+    }
+    mapBuilder.build()
+  }
+
+  override protected def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode = {
+    val helperObj = ctx.addReferenceObj("regexpNamedGroupsHelper", RegExpNamedGroups)
+    val builderRef = ctx.addReferenceObj("mapBuilder", mapBuilder)
+
+    nullSafeCodeGen(ctx, ev, (subjectVar, regexpVar) => {
+      val (patternCode, termPattern) =
+        RegExpUtils.initLastPatternCode(ctx, regexpVar, prettyName, collationId)
+      val names = ctx.freshName("names")
+      val matcher = ctx.freshName("matcher")
+      val i = ctx.freshName("i")
+      val name = ctx.freshName("name")
+      val grp = ctx.freshName("grp")
+      s"""
+         |$patternCode
+         |String[] $names = $helperObj.extractGroupNamesArray($termPattern.pattern());
+         |java.util.regex.Matcher $matcher = $termPattern.matcher($subjectVar.toString());
+         |if (!$matcher.find()) {
+         |  ${ev.isNull} = true;
+         |} else {
+         |  for (int $i = 0; $i < $names.length; $i++) {
+         |    String $name = $names[$i];
+         |    String $grp = $matcher.group($name);
+         |    ${builderRef}.put(
+         |      UTF8String.fromString($name),
+         |      $grp == null ? null : UTF8String.fromString($grp));
+         |  }
+         |  ${ev.value} = ${builderRef}.build();
+         |}
+         |""".stripMargin
+    })
+  }
+
+  override protected def withNewChildrenInternal(
+      newLeft: Expression, newRight: Expression): RegExpNamedGroups =
+    copy(subject = newLeft, regexp = newRight)
 }
 
 object RegExpUtils {

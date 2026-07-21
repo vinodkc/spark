@@ -2935,6 +2935,13 @@ def regexp_instr(
 regexp_instr.__doc__ = pysparkfuncs.regexp_instr.__doc__
 
 
+def regexp_named_groups(str: "ColumnOrName", regexp: "ColumnOrName") -> Column:
+    return _invoke_function_over_columns("regexp_named_groups", str, regexp)
+
+
+regexp_named_groups.__doc__ = pysparkfuncs.regexp_named_groups.__doc__
+
+
 def initcap(col: "ColumnOrName") -> Column:
     return _invoke_function_over_columns("initcap", col)
 

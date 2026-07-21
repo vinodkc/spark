@@ -644,6 +644,7 @@ object FunctionRegistry {
     expression[FormatString]("printf", true),
     expression[RegExpExtract]("regexp_extract"),
     expression[RegExpExtractAll]("regexp_extract_all"),
+    expression[RegExpNamedGroups]("regexp_named_groups"),
     expression[RegExpReplace]("regexp_replace"),
     expression[StringRepeat]("repeat"),
     expression[StringReplace]("replace"),

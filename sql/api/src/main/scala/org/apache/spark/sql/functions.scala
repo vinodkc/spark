@@ -5533,6 +5533,19 @@ object functions {
     Column.fn("regexp_instr", str, regexp, idx)
 
   /**
+   * Extracts all named capture groups from the first match of `regexp` in `str` and returns them
+   * as a map of group name to matched string. Returns null if there is no match. Returns an empty
+   * map if `regexp` has no named capture groups.
+   *
+   * Named groups use Java regex syntax: `(?&lt;name&gt;...)`
+   *
+   * @group string_funcs
+   * @since 4.3.0
+   */
+  def regexp_named_groups(str: Column, regexp: Column): Column =
+    Column.fn("regexp_named_groups", str, regexp)
+
+  /**
    * Decodes a BASE64 encoded string column and returns it as a binary column. This is the reverse
    * of base64.
    *

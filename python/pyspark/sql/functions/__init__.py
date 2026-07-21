@@ -162,6 +162,7 @@ __all__ = [  # noqa: F405
     "regexp_extract",
     "regexp_extract_all",
     "regexp_instr",
+    "regexp_named_groups",
     "regexp_replace",
     "regexp_substr",
     "repeat",
