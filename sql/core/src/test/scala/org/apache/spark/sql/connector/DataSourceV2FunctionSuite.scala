@@ -27,6 +27,7 @@ import test.org.apache.spark.sql.connector.catalog.functions.JavaStrLen._
 import org.apache.spark.SparkUnsupportedOperationException
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row}
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.ApplyFunctionExpression
 import org.apache.spark.sql.catalyst.expressions.CodegenObjectFactoryMode.{FALLBACK, NO_CODEGEN}
 import org.apache.spark.sql.connector.catalog.{BasicInMemoryTableCatalog, Identifier, InMemoryCatalog, SupportsNamespaces}
 import org.apache.spark.sql.connector.catalog.functions.{AggregateFunction, _}
@@ -718,6 +719,15 @@ class DataSourceV2FunctionSuite extends DatasourceV2SQLBase {
     val df2 = sql("SELECT 3 as col1")
     comparePlans(df1.queryExecution.optimizedPlan, df2.queryExecution.optimizedPlan)
     checkAnswer(df1, Row(3) :: Nil)
+  }
+
+  test("SPARK-58578: ApplyFunctionExpression is stateful and produces independent fresh copies") {
+    val expr = ApplyFunctionExpression(StrLenDefault, Seq.empty)
+    assert(expr.stateful)
+    val copy1 = expr.freshCopyIfContainsStatefulExpression()
+    val copy2 = expr.freshCopyIfContainsStatefulExpression()
+    assert(copy1 ne expr)
+    assert(copy2 ne copy1)
   }
 
   test("simple function") {
