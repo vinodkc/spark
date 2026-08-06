@@ -16,7 +16,8 @@
  */
 package org.apache.spark.sql.execution.datasources.v2.python
 
-import org.apache.spark.sql.connector.read.{Scan, ScanBuilder, SupportsPushDownFilters}
+import org.apache.spark.sql.connector.read.{Scan, ScanBuilder, SupportsPushDownFilters,
+  SupportsPushDownOffset}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
@@ -29,11 +30,13 @@ class PythonScanBuilder(
     outputSchema: StructType,
     options: CaseInsensitiveStringMap)
     extends ScanBuilder
-    with SupportsPushDownFilters {
+    with SupportsPushDownFilters
+    with SupportsPushDownOffset {
   private var supportedFilters: Array[Filter] = Array.empty
+  private var pushedOffset: Option[Int] = None
 
   override def build(): Scan =
-    new PythonScan(ds, shortName, outputSchema, options, supportedFilters)
+    new PythonScan(ds, shortName, outputSchema, options, supportedFilters, pushedOffset)
 
   // Optionally called by DSv2 once to push down filters before the scan is built.
   override def pushFilters(filters: Array[Filter]): Array[Filter] = {
@@ -58,4 +61,22 @@ class PythonScanBuilder(
   }
 
   override def pushedFilters(): Array[Filter] = supportedFilters
+
+  // Optionally called by DSv2 to push down OFFSET after filters have been pushed.
+  override def pushOffset(offset: Int): Boolean = {
+    if (!SQLConf.get.pythonOffsetPushDown) return false
+
+    val dataSource = ds.getOrCreateDataSourceInPython(shortName, options, Some(outputSchema))
+    val result =
+      ds.source.pushdownOffsetInPython(dataSource, outputSchema, supportedFilters, offset)
+    // Always cache the readInfo so PythonBatch does not need another Python worker call,
+    // regardless of whether the reader accepted the offset.
+    ds.setReadInfo(result.readInfo)
+    if (result.accepted) {
+      pushedOffset = Some(offset)
+      true
+    } else {
+      false
+    }
+  }
 }

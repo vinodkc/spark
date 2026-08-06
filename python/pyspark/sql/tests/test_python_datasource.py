@@ -409,6 +409,251 @@ class BasePythonDataSourceTestsMixin:
             with self.assertRaisesRegex(Exception, "DATA_SOURCE_PUSHDOWN_DISABLED"):
                 df.show()
 
+    def test_offset_pushdown(self):
+        class TestDataSourceReader(DataSourceReader):
+            def __init__(self):
+                self.offset = 0
+
+            def pushOffset(self, offset: int) -> bool:
+                self.offset = offset
+                return True
+
+            def partitions(self):
+                return [InputPartition(None)]
+
+            def read(self, partition):
+                for i in range(self.offset, 5):
+                    yield (i,)
+
+        class TestDataSource(DataSource):
+            @classmethod
+            def name(cls):
+                return "test"
+
+            def schema(self):
+                return "id int"
+
+            def reader(self, schema):
+                return TestDataSourceReader()
+
+        with self.sql_conf({"spark.sql.python.offsetPushdown.enabled": True}):
+            self.spark.dataSource.register(TestDataSource)
+            df = self.spark.read.format("test").load().offset(2)
+            # source skips first 2, returns rows 2-4
+            assertDataFrameEqual(df, [Row(id=2), Row(id=3), Row(id=4)])
+
+    def test_offset_pushdown_declined(self):
+        class TestDataSourceReader(DataSourceReader):
+            def pushOffset(self, offset: int) -> bool:
+                return False  # decline; Spark handles the skip
+
+            def partitions(self):
+                return [InputPartition(None)]
+
+            def read(self, partition):
+                for i in range(5):
+                    yield (i,)
+
+        class TestDataSource(DataSource):
+            @classmethod
+            def name(cls):
+                return "test"
+
+            def schema(self):
+                return "id int"
+
+            def reader(self, schema):
+                return TestDataSourceReader()
+
+        with self.sql_conf({"spark.sql.python.offsetPushdown.enabled": True}):
+            self.spark.dataSource.register(TestDataSource)
+            df = self.spark.read.format("test").load().offset(2)
+            # source returns all rows; Spark applies the skip
+            assertDataFrameEqual(df, [Row(id=2), Row(id=3), Row(id=4)])
+
+    def test_offset_pushdown_with_filters(self):
+        # Verifies that filter state and offset state coexist correctly in the same reader:
+        # pushFilters runs first (replayed on the fresh reader before pushOffset), then
+        # pushOffset runs, and both self.filters and self.offset are visible in read().
+        class TestDataSourceReader(DataSourceReader):
+            def __init__(self):
+                self.offset = 0
+                self.accepted_filters = []
+
+            def pushFilters(self, filters):
+                for f in filters:
+                    if not isinstance(f, IsNotNull):
+                        self.accepted_filters.append(f)
+                # Yield back only IsNotNull as unsupported so Spark re-evaluates them.
+                # All other filters (e.g. x >= 3) are accepted and applied in read().
+                return [f for f in filters if isinstance(f, IsNotNull)]
+
+            def pushOffset(self, offset: int) -> bool:
+                self.offset = offset
+                return True
+
+            def partitions(self):
+                return [InputPartition(None)]
+
+            def read(self, partition):
+                all_rows = [(i, i * 2) for i in range(10)]
+                # Apply pushed filters first, then pushed offset.
+                filtered = [
+                    (x, y) for (x, y) in all_rows
+                    if all(self._matches(f, x, y) for f in self.accepted_filters)
+                ]
+                for (x, y) in filtered[self.offset:]:
+                    yield (x, y)
+
+            def _matches(self, f, x, y):
+                # f.attribute is a tuple of name segments, e.g. ("x",) for a top-level column.
+                if isinstance(f, GreaterThanOrEqual) and f.attribute == ("x",):
+                    return x >= f.value
+                return True
+
+        class TestDataSource(DataSource):
+            @classmethod
+            def name(cls):
+                return "test"
+
+            def schema(self):
+                return "x int, y int"
+
+            def reader(self, schema):
+                return TestDataSourceReader()
+
+        with self.sql_conf(
+            {
+                "spark.sql.python.filterPushdown.enabled": True,
+                "spark.sql.python.offsetPushdown.enabled": True,
+            }
+        ):
+            self.spark.dataSource.register(TestDataSource)
+            df = self.spark.read.format("test").load().filter("x >= 3").offset(1)
+            # x >= 3 is pushed to the source; IsNotNull(x) is left as a residual Filter.
+            # SupportsPushDownOffset is only applied when OFFSET sits directly above the
+            # scan with no intervening operators, so the residual Filter node blocks offset
+            # pushdown here. Spark applies offset(1) after the residual Filter runs.
+            # Source emits x=3..9 (7 rows). Spark skips the first -> x=4..9.
+            assertDataFrameEqual(
+                df,
+                [Row(x=4, y=8), Row(x=5, y=10), Row(x=6, y=12),
+                 Row(x=7, y=14), Row(x=8, y=16), Row(x=9, y=18)],
+            )
+
+    def test_offset_pushdown_disabled(self):
+        class TestDataSourceReader(DataSourceReader):
+            def pushOffset(self, offset: int) -> bool:
+                assert False, "should not be called when disabled"
+
+            def read(self, partition):
+                assert False
+
+        class TestDataSource(DataSource):
+            def reader(self, schema):
+                return TestDataSourceReader()
+
+        with self.sql_conf({"spark.sql.python.offsetPushdown.enabled": False}):
+            self.spark.dataSource.register(TestDataSource)
+            df = self.spark.read.format("TestDataSource").schema("id int").load()
+            with self.assertRaisesRegex(Exception, "DATA_SOURCE_OFFSET_PUSHDOWN_DISABLED"):
+                df.show()
+
+    def test_offset_pushdown_zero(self):
+        call_count = []
+
+        class TestDataSourceReader(DataSourceReader):
+            def pushOffset(self, offset: int) -> bool:
+                call_count.append(offset)
+                return True
+
+            def partitions(self):
+                return [InputPartition(None)]
+
+            def read(self, partition):
+                for i in range(3):
+                    yield (i,)
+
+        class TestDataSource(DataSource):
+            @classmethod
+            def name(cls):
+                return "test"
+
+            def schema(self):
+                return "id int"
+
+            def reader(self, schema):
+                return TestDataSourceReader()
+
+        with self.sql_conf({"spark.sql.python.offsetPushdown.enabled": True}):
+            self.spark.dataSource.register(TestDataSource)
+            df = self.spark.read.format("test").load().offset(0)
+            assertDataFrameEqual(df, [Row(id=0), Row(id=1), Row(id=2)])
+            # offset(0) is a no-op; pushOffset should not be called
+            self.assertEqual(call_count, [])
+
+    def test_offset_pushdown_not_implemented(self):
+        class TestDataSourceReader(DataSourceReader):
+            def partitions(self):
+                return [InputPartition(None)]
+
+            def read(self, partition):
+                for i in range(5):
+                    yield (i,)
+
+        class TestDataSource(DataSource):
+            @classmethod
+            def name(cls):
+                return "test"
+
+            def schema(self):
+                return "id int"
+
+            def reader(self, schema):
+                return TestDataSourceReader()
+
+        with self.sql_conf({"spark.sql.python.offsetPushdown.enabled": True}):
+            self.spark.dataSource.register(TestDataSource)
+            df = self.spark.read.format("test").load().offset(2)
+            # Reader does not override pushOffset; Spark applies offset silently.
+            assertDataFrameEqual(df, [Row(id=2), Row(id=3), Row(id=4)])
+
+    def test_offset_pushdown_explain(self):
+        class TestDataSourceReader(DataSourceReader):
+            def __init__(self):
+                self.offset = 0
+
+            def pushOffset(self, offset: int) -> bool:
+                self.offset = offset
+                return True
+
+            def partitions(self):
+                return [InputPartition(None)]
+
+            def read(self, partition):
+                for i in range(self.offset, 5):
+                    yield (i,)
+
+        class TestDataSource(DataSource):
+            @classmethod
+            def name(cls):
+                return "test"
+
+            def schema(self):
+                return "id int"
+
+            def reader(self, schema):
+                return TestDataSourceReader()
+
+        with self.sql_conf({"spark.sql.python.offsetPushdown.enabled": True}):
+            self.spark.dataSource.register(TestDataSource)
+            df = self.spark.read.format("test").load().offset(3)
+            # PushedOffset appears in the verbose (formatted) explain output.
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                df.explain(mode="formatted")
+            self.assertIn("PushedOffset", buf.getvalue())
+
     def _check_filters(self, sql_type, sql_filter, python_filters):
         """
         Parameters

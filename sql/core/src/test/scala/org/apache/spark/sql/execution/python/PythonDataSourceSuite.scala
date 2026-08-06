@@ -308,6 +308,86 @@ class PythonDataSourceSuite extends PythonDataSourceSuiteBase {
     }
   }
 
+  test("data source reader with offset pushdown - offset accepted") {
+    assume(shouldTestPandasUDFs)
+    val dataSourceScript =
+      s"""
+         |from pyspark.sql.datasource import DataSource, DataSourceReader, InputPartition
+         |
+         |class OffsetReader(DataSourceReader):
+         |    def __init__(self):
+         |        self.offset = 0
+         |
+         |    def pushOffset(self, offset):
+         |        self.offset = offset
+         |        return True
+         |
+         |    def partitions(self):
+         |        return [InputPartition(None)]
+         |
+         |    def read(self, partition):
+         |        for i in range(self.offset, 5):
+         |            yield (i,)
+         |
+         |class $dataSourceName(DataSource):
+         |    def schema(self):
+         |        return "id int"
+         |
+         |    def reader(self, schema):
+         |        return OffsetReader()
+         |""".stripMargin
+    val schema = StructType.fromDDL("id INT")
+    val dataSource = createUserDefinedPythonDataSource(dataSourceName, dataSourceScript)
+    withSQLConf(SQLConf.PYTHON_OFFSET_PUSHDOWN_ENABLED.key -> "true") {
+      spark.dataSource.registerPython(dataSourceName, dataSource)
+      val df = spark.read.format(dataSourceName).schema(schema).load().offset(2)
+      collectFirst(df.queryExecution.executedPlan) {
+        case s: BatchScanExec if s.scan.isInstanceOf[PythonScan] =>
+          val p = s.scan.asInstanceOf[PythonScan]
+          assert(p.getMetaData().get("PushedOffset").contains("2"))
+      }.getOrElse(fail("PythonScan not found in plan"))
+      checkAnswer(df, Seq(Row(2), Row(3), Row(4)))
+    }
+  }
+
+  test("data source reader with offset pushdown - offset declined") {
+    assume(shouldTestPandasUDFs)
+    val dataSourceScript =
+      s"""
+         |from pyspark.sql.datasource import DataSource, DataSourceReader, InputPartition
+         |
+         |class NoOffsetReader(DataSourceReader):
+         |    def pushOffset(self, offset):
+         |        return False
+         |
+         |    def partitions(self):
+         |        return [InputPartition(None)]
+         |
+         |    def read(self, partition):
+         |        for i in range(5):
+         |            yield (i,)
+         |
+         |class $dataSourceName(DataSource):
+         |    def schema(self):
+         |        return "id int"
+         |
+         |    def reader(self, schema):
+         |        return NoOffsetReader()
+         |""".stripMargin
+    val schema = StructType.fromDDL("id INT")
+    val dataSource = createUserDefinedPythonDataSource(dataSourceName, dataSourceScript)
+    withSQLConf(SQLConf.PYTHON_OFFSET_PUSHDOWN_ENABLED.key -> "true") {
+      spark.dataSource.registerPython(dataSourceName, dataSource)
+      val df = spark.read.format(dataSourceName).schema(schema).load().offset(2)
+      collectFirst(df.queryExecution.executedPlan) {
+        case s: BatchScanExec if s.scan.isInstanceOf[PythonScan] =>
+          val p = s.scan.asInstanceOf[PythonScan]
+          assert(!p.getMetaData().contains("PushedOffset"))
+      }.getOrElse(fail("PythonScan not found in plan"))
+      checkAnswer(df, Seq(Row(2), Row(3), Row(4)))
+    }
+  }
+
   test("register data source") {
     assume(shouldTestPandasUDFs)
     val dataSourceScript =

@@ -578,6 +578,74 @@ class DataSourceReader(ABC):
         """
         return filters
 
+    def pushOffset(self, offset: int) -> bool:
+        """
+        Called during query planning to push down OFFSET to the data source.
+
+        When enabled (``spark.sql.python.offsetPushdown.enabled = true``), Spark calls this
+        method once before :meth:`DataSourceReader.partitions` and
+        :meth:`DataSourceReader.read`. The data source can store the offset and use it to
+        skip rows natively (e.g. add ``OFFSET n`` to a SQL query, skip the first ``n``
+        pages of a paginated REST API, etc.).
+
+        Return ``True`` if the data source will skip the first ``offset`` rows natively.
+        Returning ``True`` removes the ``OFFSET`` node from Spark's plan entirely, so
+        the data source is responsible for the skip. Return ``False`` (the default) to let
+        Spark apply the offset itself.
+
+        This method is called on the same reader instance that will later be used for
+        :meth:`DataSourceReader.partitions` and :meth:`DataSourceReader.read`, so any
+        state stored in ``self`` here is visible in those methods.
+
+        If :meth:`DataSourceReader.pushFilters` is also implemented, it will have been
+        called (with the accepted filters replayed) before this method, so filter state
+        is available in ``self`` when offset pushdown runs.
+
+        .. versionadded:: 4.3.0
+
+        Parameters
+        ----------
+        offset : int
+            The number of rows to skip from the beginning of the result set.
+
+        Returns
+        -------
+        bool
+            ``True`` if the data source will skip the first ``offset`` rows natively,
+            ``False`` if Spark should apply the offset itself.
+
+        Notes
+        -----
+        This method is allowed to modify ``self``. The object must remain picklable.
+        Modifications to ``self`` are visible to the :meth:`partitions` and
+        :meth:`read` methods.
+
+        Offset pushdown is only attempted when the ``OFFSET`` node sits directly above
+        the scan in the query plan, with no intervening operators (such as a residual
+        ``Filter`` node left by partial filter pushdown). If such an operator is
+        present, Spark will not call this method and will apply the offset itself after
+        the intervening operator.
+
+        Examples
+        --------
+        Store the offset and apply it when reading:
+
+        >>> class RestReader(DataSourceReader):
+        ...     def __init__(self):
+        ...         self.offset = 0
+        ...
+        ...     def pushOffset(self, offset):
+        ...         self.offset = offset
+        ...         return True  # we will honor it in read()
+        ...
+        ...     def read(self, partition):
+        ...         # skip first self.offset rows from the API response
+        ...         for i, row in enumerate(fetch_all()):
+        ...             if i >= self.offset:
+        ...                 yield row
+        """
+        return False
+
     def partitions(self) -> Sequence[InputPartition]:
         """
         Returns an iterator of partitions for this data source.

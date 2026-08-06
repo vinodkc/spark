@@ -91,6 +91,30 @@ case class UserDefinedPythonDataSource(dataSourceCls: PythonFunction) {
   }
 
   /**
+   * (Driver-side) Run Python process to push down offset.
+   *
+   * Always returns the read info produced by the worker so it can be cached, regardless of
+   * whether the reader accepted the offset. The `accepted` field indicates whether the OFFSET
+   * node can be removed from the plan.
+   *
+   * @param supportedFilters filters that were previously pushed and must be replayed on the reader
+   *                         before calling pushOffset, so the reader has the correct state.
+   */
+  def pushdownOffsetInPython(
+      pythonResult: PythonDataSourceCreationResult,
+      outputSchema: StructType,
+      supportedFilters: Array[Filter],
+      offset: Int): PythonOffsetPushdownResult = {
+    val runner = new UserDefinedPythonDataSourceOffsetPushdownRunner(
+      createPythonFunction(pythonResult.dataSource),
+      outputSchema,
+      supportedFilters,
+      offset
+    )
+    runner.runInPython()
+  }
+
+  /**
    * (Driver-side) Run Python process, and get the partition read functions, and
    * partition information.
    */
@@ -466,6 +490,8 @@ private class UserDefinedPythonDataSourceFilterPushdownRunner(
 
   def isAnyFilterSupported: Boolean = serializedFilters.nonEmpty
 
+  private[python] def serializedFiltersJson: String = mapper.writeValueAsString(serializedFilters)
+
   override protected def writeToPython(dataOut: DataOutputStream, pickler: Pickler): Unit = {
     // Send Python data source
     PythonWorkerUtils.writePythonFunction(dataSource, dataOut)
@@ -497,6 +523,59 @@ private class UserDefinedPythonDataSourceFilterPushdownRunner(
       readInfo = readInfo,
       isFilterPushed = isFilterPushed
     )
+  }
+}
+
+case class PythonOffsetPushdownResult(
+    readInfo: PythonDataSourceReadInfo,
+    accepted: Boolean)
+
+/**
+ * Push down offset to a Python data source.
+ *
+ * The supported filters (already accepted by a prior filter pushdown call) are sent so the
+ * Python worker can replay pushFilters on a fresh reader before calling pushOffset, ensuring
+ * the reader is in the same state as after the original filter pushdown.
+ *
+ * @param dataSource a Python data source instance
+ * @param schema output schema of the Python data source
+ * @param supportedFilters filters accepted during a prior filter pushdown; empty if none
+ * @param offset the offset value to push down
+ */
+private class UserDefinedPythonDataSourceOffsetPushdownRunner(
+    dataSource: PythonFunction,
+    schema: StructType,
+    supportedFilters: Array[Filter],
+    offset: Int)
+    extends PythonPlannerRunner[PythonOffsetPushdownResult](dataSource) {
+
+  private val serializedFiltersJson: String =
+    if (supportedFilters.isEmpty) "[]"
+    else new UserDefinedPythonDataSourceFilterPushdownRunner(
+      dataSource, schema, supportedFilters.toIndexedSeq).serializedFiltersJson
+
+  override val workerModule = "pyspark.sql.worker.data_source_pushdown_offset"
+
+  override protected def runnerConf: Map[String, String] = {
+    super.runnerConf ++ SQLConf.get.pythonDataSourceProfiler.map(p =>
+      Map(SQLConf.PYTHON_DATA_SOURCE_PROFILER.key -> p)
+    ).getOrElse(Map.empty)
+  }
+
+  override protected def writeToPython(dataOut: DataOutputStream, pickler: Pickler): Unit = {
+    PythonWorkerUtils.writePythonFunction(dataSource, dataOut)
+    PythonWorkerUtils.writeUTF(schema.json, dataOut)
+    PythonWorkerUtils.writeUTF(serializedFiltersJson, dataOut)
+    dataOut.writeInt(offset)
+    dataOut.writeInt(SQLConf.get.arrowMaxRecordsPerBatch)
+    dataOut.writeBoolean(SQLConf.get.pysparkBinaryAsBytes)
+  }
+
+  override protected def receiveFromPython(
+      dataIn: DataInputStream): PythonOffsetPushdownResult = {
+    val readInfo = PythonDataSourceReadInfo.receive(dataIn)
+    val accepted = dataIn.readBoolean()
+    PythonOffsetPushdownResult(readInfo = readInfo, accepted = accepted)
   }
 }
 
@@ -572,9 +651,12 @@ private class UserDefinedPythonDataSourceReadRunner(
     // Send output schema
     PythonWorkerUtils.writeUTF(outputSchema.json, dataOut)
 
-    // Send configurations
+    // Send configurations. The order here must match the reads in
+    // plan_data_source_read.py (_main: max_arrow_batch_size, enable_pushdown,
+    // enable_offset_pushdown).
     dataOut.writeInt(SQLConf.get.arrowMaxRecordsPerBatch)
     dataOut.writeBoolean(SQLConf.get.pythonFilterPushDown)
+    dataOut.writeBoolean(SQLConf.get.pythonOffsetPushDown)
 
     dataOut.writeBoolean(isStreaming)
     dataOut.writeBoolean(SQLConf.get.pysparkBinaryAsBytes)
