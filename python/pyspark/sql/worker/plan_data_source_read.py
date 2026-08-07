@@ -338,7 +338,6 @@ def _main(infile: IO, outfile: IO) -> None:
     assert max_arrow_batch_size > 0, (
         f"The maximum arrow batch size should be greater than 0, but got '{max_arrow_batch_size}'"
     )
-    # Must match the order written by UserDefinedPythonDataSourceReadRunner.writeToPython.
     enable_pushdown = read_bool(infile)
 
     is_streaming = read_bool(infile)
@@ -374,6 +373,7 @@ def _main(infile: IO, outfile: IO) -> None:
                         "conf": "spark.sql.python.filterPushdown.enabled",
                     },
                 )
+
         # Send the read function and partitions to the JVM.
         write_read_func_and_partitions(
             outfile,
