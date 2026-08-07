@@ -541,6 +541,71 @@ class BasePythonDataSourceTestsMixin:
                  Row(x=7, y=14), Row(x=8, y=16), Row(x=9, y=18)],
             )
 
+    def test_offset_pushdown_with_filters_both_pushed(self):
+        # Verifies the filter-replay-before-offset path in data_source_pushdown_offset.py.
+        # The reader accepts ALL filters (returns empty unsupported set), so no residual
+        # Filter node is left in the plan. V2ScanRelationPushDown then calls pushOffset
+        # directly on the scan. Both self.accepted_filters and self.offset are set before
+        # read() is called.
+        class TestDataSourceReader(DataSourceReader):
+            def __init__(self):
+                self.offset = 0
+                self.accepted_filters = []
+
+            def pushFilters(self, filters):
+                # Accept all filters; return empty list (no residual filters for Spark).
+                self.accepted_filters = list(filters)
+                return []
+
+            def pushOffset(self, offset: int) -> bool:
+                self.offset = offset
+                return True
+
+            def partitions(self):
+                return [InputPartition(None)]
+
+            def read(self, partition):
+                all_rows = [(i, i * 2) for i in range(10)]
+                filtered = [
+                    (x, y) for (x, y) in all_rows
+                    if all(self._matches(f, x, y) for f in self.accepted_filters)
+                ]
+                for (x, y) in filtered[self.offset:]:
+                    yield (x, y)
+
+            def _matches(self, f, x, y):
+                if isinstance(f, GreaterThanOrEqual) and f.attribute == ("x",):
+                    return x >= f.value
+                return True
+
+        class TestDataSource(DataSource):
+            @classmethod
+            def name(cls):
+                return "test"
+
+            def schema(self):
+                return "x int, y int"
+
+            def reader(self, schema):
+                return TestDataSourceReader()
+
+        with self.sql_conf(
+            {
+                "spark.sql.python.filterPushdown.enabled": True,
+                "spark.sql.python.offsetPushdown.enabled": True,
+            }
+        ):
+            self.spark.dataSource.register(TestDataSource)
+            df = self.spark.read.format("test").load().filter("x >= 3").offset(2)
+            # All filters are accepted (no residual), so OFFSET sits directly above the scan
+            # and is pushed. Source sees x >= 3 replayed before pushOffset(2). Source emits
+            # x=3..9 (7 rows) then skips 2 natively -> x=5..9.
+            assertDataFrameEqual(
+                df,
+                [Row(x=5, y=10), Row(x=6, y=12), Row(x=7, y=14),
+                 Row(x=8, y=16), Row(x=9, y=18)],
+            )
+
     def test_offset_pushdown_disabled(self):
         # When the conf is disabled, pushOffset must not be called; Spark applies
         # the offset itself after reading all rows from the source.

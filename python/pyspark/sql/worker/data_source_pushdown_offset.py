@@ -38,7 +38,7 @@ utf8_deserializer = UTF8Deserializer()
 
 def _main(infile: IO, outfile: IO) -> None:
     """
-    Main method for planning a data source read with offset pushdown.
+    Push down OFFSET to a Python data source during query planning.
 
     This process is invoked from `UserDefinedPythonDataSourceOffsetPushdownRunner` in the
     JVM. It receives a data source instance, schema, previously-pushed filters (to restore
@@ -120,9 +120,9 @@ def _main(infile: IO, outfile: IO) -> None:
             binary_as_bytes=binary_as_bytes,
         )
 
-    # Send whether the offset was accepted (Java DataInputStream.readBoolean reads 1 byte).
-    outfile.write(struct.pack("!?", accepted))
-    outfile.flush()
+        # Send whether the offset was accepted (Java DataInputStream.readBoolean reads 1 byte).
+        outfile.write(struct.pack("!?", accepted))
+        outfile.flush()
 
 
 def main(infile: IO, outfile: IO) -> None:

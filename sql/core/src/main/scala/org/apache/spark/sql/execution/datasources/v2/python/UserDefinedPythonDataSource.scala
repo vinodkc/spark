@@ -109,7 +109,7 @@ case class UserDefinedPythonDataSource(dataSourceCls: PythonFunction) {
       if (supportedFilters.isEmpty) "[]"
       else new UserDefinedPythonDataSourceFilterPushdownRunner(
         createPythonFunction(pythonResult.dataSource), outputSchema,
-        supportedFilters.toIndexedSeq).serializedFiltersJson
+        supportedFilters.toIndexedSeq).filtersToJson
     val runner = new UserDefinedPythonDataSourceOffsetPushdownRunner(
       createPythonFunction(pythonResult.dataSource),
       outputSchema,
@@ -495,7 +495,7 @@ private class UserDefinedPythonDataSourceFilterPushdownRunner(
 
   def isAnyFilterSupported: Boolean = serializedFilters.nonEmpty
 
-  private def serializedFiltersJson: String = mapper.writeValueAsString(serializedFilters)
+  private[python] def filtersToJson: String = mapper.writeValueAsString(serializedFilters)
 
   override protected def writeToPython(dataOut: DataOutputStream, pickler: Pickler): Unit = {
     // Send Python data source
@@ -505,7 +505,7 @@ private class UserDefinedPythonDataSourceFilterPushdownRunner(
     PythonWorkerUtils.writeUTF(schema.json, dataOut)
 
     // Send the filters
-    PythonWorkerUtils.writeUTF(mapper.writeValueAsString(serializedFilters), dataOut)
+    PythonWorkerUtils.writeUTF(filtersToJson, dataOut)
 
     // Send configurations
     dataOut.writeInt(SQLConf.get.arrowMaxRecordsPerBatch)
