@@ -574,7 +574,8 @@ class BasePythonDataSourceTestsMixin:
                     yield (x, y)
 
             def _matches(self, f, x, y):
-                if isinstance(f, GreaterThanOrEqual) and f.attribute == "x":
+                # f.attribute is a ColumnPath tuple, e.g. ("x",) for a top-level column.
+                if isinstance(f, GreaterThanOrEqual) and f.attribute == ("x",):
                     return x >= f.value
                 return True
 

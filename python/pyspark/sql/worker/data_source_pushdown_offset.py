@@ -21,7 +21,7 @@ from typing import IO
 
 from pyspark.errors import PySparkAssertionError
 from pyspark.logger.worker_io import capture_outputs
-from pyspark.serializers import UTF8Deserializer, read_bool, read_int, write_int
+from pyspark.serializers import UTF8Deserializer, read_bool, read_int
 from pyspark.sql.datasource import DataSource, DataSourceReader
 from pyspark.sql.types import StructType, _parse_datatype_json_string
 from pyspark.sql.worker.data_source_pushdown_filters import deserializeFilter
