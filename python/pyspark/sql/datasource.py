@@ -639,8 +639,8 @@ class DataSourceReader(ABC):
         ...         return True  # we will honor it in read()
         ...
         ...     def read(self, partition):
-        ...         # skip first self.offset rows from the API response
-        ...         for i, row in enumerate(fetch_all()):
+        ...         # fetch_all() is illustrative; replace with your actual data source call.
+        ...         for i, row in enumerate(fetch_all()):  # noqa: F821
         ...             if i >= self.offset:
         ...                 yield row
         """

@@ -97,18 +97,23 @@ case class UserDefinedPythonDataSource(dataSourceCls: PythonFunction) {
    * whether the reader accepted the offset. The `accepted` field indicates whether the OFFSET
    * node can be removed from the plan.
    *
-   * @param supportedFilters filters that were previously pushed and must be replayed on the reader
-   *                         before calling pushOffset, so the reader has the correct state.
+   * @param supportedFilters filters accepted during a prior pushdown; serialized to JSON and sent
+   *                         to the worker so it can replay pushFilters before calling pushOffset.
    */
   def pushdownOffsetInPython(
       pythonResult: PythonDataSourceCreationResult,
       outputSchema: StructType,
       supportedFilters: Array[Filter],
       offset: Int): PythonOffsetPushdownResult = {
+    val filtersJson =
+      if (supportedFilters.isEmpty) "[]"
+      else new UserDefinedPythonDataSourceFilterPushdownRunner(
+        createPythonFunction(pythonResult.dataSource), outputSchema,
+        supportedFilters.toIndexedSeq).serializedFiltersJson
     val runner = new UserDefinedPythonDataSourceOffsetPushdownRunner(
       createPythonFunction(pythonResult.dataSource),
       outputSchema,
-      supportedFilters,
+      filtersJson,
       offset
     )
     runner.runInPython()
@@ -490,7 +495,7 @@ private class UserDefinedPythonDataSourceFilterPushdownRunner(
 
   def isAnyFilterSupported: Boolean = serializedFilters.nonEmpty
 
-  private[python] def serializedFiltersJson: String = mapper.writeValueAsString(serializedFilters)
+  private def serializedFiltersJson: String = mapper.writeValueAsString(serializedFilters)
 
   override protected def writeToPython(dataOut: DataOutputStream, pickler: Pickler): Unit = {
     // Send Python data source
@@ -539,20 +544,16 @@ case class PythonOffsetPushdownResult(
  *
  * @param dataSource a Python data source instance
  * @param schema output schema of the Python data source
- * @param supportedFilters filters accepted during a prior filter pushdown; empty if none
+ * @param serializedFiltersJson JSON of filters accepted during a prior filter pushdown;
+ *                              "[]" if no filters were pushed
  * @param offset the offset value to push down
  */
 private class UserDefinedPythonDataSourceOffsetPushdownRunner(
     dataSource: PythonFunction,
     schema: StructType,
-    supportedFilters: Array[Filter],
+    serializedFiltersJson: String,
     offset: Int)
     extends PythonPlannerRunner[PythonOffsetPushdownResult](dataSource) {
-
-  private val serializedFiltersJson: String =
-    if (supportedFilters.isEmpty) "[]"
-    else new UserDefinedPythonDataSourceFilterPushdownRunner(
-      dataSource, schema, supportedFilters.toIndexedSeq).serializedFiltersJson
 
   override val workerModule = "pyspark.sql.worker.data_source_pushdown_offset"
 
@@ -651,12 +652,9 @@ private class UserDefinedPythonDataSourceReadRunner(
     // Send output schema
     PythonWorkerUtils.writeUTF(outputSchema.json, dataOut)
 
-    // Send configurations. The order here must match the reads in
-    // plan_data_source_read.py (_main: max_arrow_batch_size, enable_pushdown,
-    // enable_offset_pushdown).
+    // Send configurations. Order must match plan_data_source_read.py reads.
     dataOut.writeInt(SQLConf.get.arrowMaxRecordsPerBatch)
     dataOut.writeBoolean(SQLConf.get.pythonFilterPushDown)
-    dataOut.writeBoolean(SQLConf.get.pythonOffsetPushDown)
 
     dataOut.writeBoolean(isStreaming)
     dataOut.writeBoolean(SQLConf.get.pysparkBinaryAsBytes)

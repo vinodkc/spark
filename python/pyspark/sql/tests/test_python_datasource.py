@@ -531,9 +531,9 @@ class BasePythonDataSourceTestsMixin:
             self.spark.dataSource.register(TestDataSource)
             df = self.spark.read.format("test").load().filter("x >= 3").offset(1)
             # x >= 3 is pushed to the source; IsNotNull(x) is left as a residual Filter.
-            # SupportsPushDownOffset is only applied when OFFSET sits directly above the
-            # scan with no intervening operators, so the residual Filter node blocks offset
-            # pushdown here. Spark applies offset(1) after the residual Filter runs.
+            # V2ScanRelationPushDown only calls pushOffset when OFFSET sits directly above
+            # the scan; the residual Filter node blocks that, so offset is not pushed.
+            # Spark applies offset(1) after the residual Filter runs.
             # Source emits x=3..9 (7 rows). Spark skips the first -> x=4..9.
             assertDataFrameEqual(
                 df,
