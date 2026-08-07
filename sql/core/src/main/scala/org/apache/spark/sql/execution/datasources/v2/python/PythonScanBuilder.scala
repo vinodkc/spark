@@ -64,19 +64,21 @@ class PythonScanBuilder(
 
   // Optionally called by DSv2 to push down OFFSET after filters have been pushed.
   override def pushOffset(offset: Int): Boolean = {
-    if (!SQLConf.get.pythonOffsetPushDown) return false
-
-    val dataSource = ds.getOrCreateDataSourceInPython(shortName, options, Some(outputSchema))
-    val result =
-      ds.source.pushdownOffsetInPython(dataSource, outputSchema, supportedFilters, offset)
-    // Always cache the readInfo so PythonBatch does not need another Python worker call,
-    // regardless of whether the reader accepted the offset.
-    ds.setReadInfo(result.readInfo)
-    if (result.accepted) {
-      pushedOffset = Some(offset)
-      true
-    } else {
+    if (!SQLConf.get.pythonOffsetPushDown) {
       false
+    } else {
+      val dataSource = ds.getOrCreateDataSourceInPython(shortName, options, Some(outputSchema))
+      val result =
+        ds.source.pushdownOffsetInPython(dataSource, outputSchema, supportedFilters, offset)
+      // Always cache the readInfo so PythonBatch does not need another Python worker call,
+      // regardless of whether the reader accepted the offset.
+      ds.setReadInfo(result.readInfo)
+      if (result.accepted) {
+        pushedOffset = Some(offset)
+        true
+      } else {
+        false
+      }
     }
   }
 }

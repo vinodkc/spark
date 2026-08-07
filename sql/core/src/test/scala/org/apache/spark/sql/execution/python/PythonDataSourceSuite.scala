@@ -388,6 +388,52 @@ class PythonDataSourceSuite extends PythonDataSourceSuiteBase {
     }
   }
 
+  test("data source reader with offset pushdown - limit+offset combined") {
+    // PythonScanBuilder does not implement SupportsPushDownLimit, so canRemoveLimit is
+    // always false and V2ScanRelationPushDown never pushes offset via the LimitAndOffset
+    // branch. The standalone Offset branch can still push offset, and Spark applies any
+    // remaining Limit itself. This test locks in that correctness.
+    assume(shouldTestPandasUDFs)
+    val dataSourceScript =
+      s"""
+         |from pyspark.sql.datasource import DataSource, DataSourceReader, InputPartition
+         |
+         |class OffsetReader(DataSourceReader):
+         |    def __init__(self):
+         |        self.offset = 0
+         |
+         |    def pushOffset(self, offset):
+         |        self.offset = offset
+         |        return True
+         |
+         |    def partitions(self):
+         |        return [InputPartition(None)]
+         |
+         |    def read(self, partition):
+         |        for i in range(self.offset, 10):
+         |            yield (i,)
+         |
+         |class $dataSourceName(DataSource):
+         |    def schema(self):
+         |        return "id int"
+         |
+         |    def reader(self, schema):
+         |        return OffsetReader()
+         |""".stripMargin
+    val schema = StructType.fromDDL("id INT")
+    val dataSource = createUserDefinedPythonDataSource(dataSourceName, dataSourceScript)
+    withSQLConf(SQLConf.PYTHON_OFFSET_PUSHDOWN_ENABLED.key -> "true") {
+      spark.dataSource.registerPython(dataSourceName, dataSource)
+      // .offset(1).limit(3): offset is pushed via the standalone Offset branch; Spark keeps Limit.
+      val df1 = spark.read.format(dataSourceName).schema(schema).load().offset(1).limit(3)
+      checkAnswer(df1, Seq(Row(1), Row(2), Row(3)))
+      // .limit(3).offset(1): LIMIT is not pushed (no SupportsPushDownLimit), so canRemoveLimit
+      // is false; offset is not pushed via the LimitAndOffset path. Spark applies both.
+      val df2 = spark.read.format(dataSourceName).schema(schema).load().limit(3).offset(1)
+      checkAnswer(df2, Seq(Row(1), Row(2)))
+    }
+  }
+
   test("register data source") {
     assume(shouldTestPandasUDFs)
     val dataSourceScript =

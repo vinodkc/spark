@@ -542,22 +542,39 @@ class BasePythonDataSourceTestsMixin:
             )
 
     def test_offset_pushdown_disabled(self):
+        # When the conf is disabled, pushOffset must not be called; Spark applies
+        # the offset itself after reading all rows from the source.
+        push_calls = []
+
         class TestDataSourceReader(DataSourceReader):
             def pushOffset(self, offset: int) -> bool:
-                assert False, "should not be called when disabled"
+                push_calls.append(offset)
+                return True
+
+            def partitions(self):
+                return [InputPartition(None)]
 
             def read(self, partition):
-                assert False
+                for i in range(5):
+                    yield (i,)
 
         class TestDataSource(DataSource):
+            @classmethod
+            def name(cls):
+                return "test"
+
+            def schema(self):
+                return "id int"
+
             def reader(self, schema):
                 return TestDataSourceReader()
 
         with self.sql_conf({"spark.sql.python.offsetPushdown.enabled": False}):
             self.spark.dataSource.register(TestDataSource)
-            df = self.spark.read.format("TestDataSource").schema("id int").load()
-            with self.assertRaisesRegex(Exception, "DATA_SOURCE_OFFSET_PUSHDOWN_DISABLED"):
-                df.show()
+            df = self.spark.read.format("test").load().offset(2)
+            # pushOffset is not called; Spark applies the skip.
+            assertDataFrameEqual(df, [Row(id=2), Row(id=3), Row(id=4)])
+            self.assertEqual(push_calls, [])
 
     def test_offset_pushdown_zero(self):
         call_count = []

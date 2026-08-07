@@ -376,19 +376,6 @@ def _main(infile: IO, outfile: IO) -> None:
                         "conf": "spark.sql.python.filterPushdown.enabled",
                     },
                 )
-            is_offset_pushdown_implemented = (
-                getattr(reader.pushOffset, "__func__", None) is not DataSourceReader.pushOffset
-            )
-            if is_offset_pushdown_implemented and not enable_offset_pushdown:
-                # Do not silently ignore pushOffset when offset pushdown is disabled.
-                # Raise an error to ask the user to enable offset pushdown.
-                raise PySparkAssertionError(
-                    errorClass="DATA_SOURCE_OFFSET_PUSHDOWN_DISABLED",
-                    messageParameters={
-                        "type": type(reader).__name__,
-                        "conf": "spark.sql.python.offsetPushdown.enabled",
-                    },
-                )
         # Send the read function and partitions to the JVM.
         write_read_func_and_partitions(
             outfile,
