@@ -6194,7 +6194,7 @@ object SQLConf {
     .internal()
     .doc("When true, enable offset pushdown to Python datasource, at the cost of running " +
       "Python worker one additional time during planning.")
-    .version("4.3.0")
+    .version("4.4.0")
     .booleanConf
     .createWithDefault(false)
 

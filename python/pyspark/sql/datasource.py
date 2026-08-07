@@ -601,7 +601,7 @@ class DataSourceReader(ABC):
         called (with the accepted filters replayed) before this method, so filter state
         is available in ``self`` when offset pushdown runs.
 
-        .. versionadded:: 4.3.0
+        .. versionadded:: 4.4.0
 
         Parameters
         ----------
