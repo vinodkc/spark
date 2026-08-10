@@ -926,7 +926,9 @@ private[spark] class AppStatusListener(
   }
 
   override def onUnpersistRDD(event: SparkListenerUnpersistRDD): Unit = {
-    liveRDDs.remove(event.rddId).foreach { liveRDD =>
+    liveRDDs.remove(
+      if (event.rddId <= Int.MaxValue) event.rddId.toInt else return
+    ).foreach { liveRDD =>
       val storageLevel = liveRDD.info.storageLevel
 
       // Use RDD partition info to update executor block info.

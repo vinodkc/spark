@@ -1120,7 +1120,8 @@ private[spark] object JsonProtocol extends JsonUtils {
   }
 
   def unpersistRDDFromJson(json: JsonNode): SparkListenerUnpersistRDD = {
-    SparkListenerUnpersistRDD(json.get("RDD ID").extractInt)
+    // Written as a Long since SPARK-41246; older logs may have Int values which parse safely.
+    SparkListenerUnpersistRDD(json.get("RDD ID").extractLong)
   }
 
   def applicationStartFromJson(json: JsonNode): SparkListenerApplicationStart = {

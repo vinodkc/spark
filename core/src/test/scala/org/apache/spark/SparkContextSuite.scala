@@ -1521,6 +1521,84 @@ class SparkContextSuite extends SparkFunSuite with LocalSparkContext with Eventu
     sc = new SparkContext(conf)
     assert(sc.env.memoryManager.maxOffHeapStorageMemory > 0)
   }
+
+  test("SPARK-41246: longId uses AtomicLong counter when flag is enabled") {
+    val conf = new SparkConf().setAppName("test").setMaster("local")
+      .set(LONG_RDD_IDS_ENABLED, true)
+    sc = new SparkContext(conf)
+    val rdd1 = sc.parallelize(1 to 2)
+    val rdd2 = sc.parallelize(1 to 2)
+    assert(rdd1.longId === 0L)
+    assert(rdd2.longId === 1L)
+    assert(rdd1.id === -1, "id should be -1 sentinel when longIds are enabled")
+  }
+
+  test("SPARK-41246: longId equals id when flag is disabled") {
+    val conf = new SparkConf().setAppName("test").setMaster("local")
+      .set(LONG_RDD_IDS_ENABLED, false)
+    sc = new SparkContext(conf)
+    val rdd = sc.parallelize(1 to 2)
+    assert(rdd.longId === rdd.id.toLong)
+  }
+
+  test("SPARK-41246: longId stays unique and positive after crossing Int.MaxValue") {
+    val conf = new SparkConf().setAppName("test").setMaster("local")
+      .set(LONG_RDD_IDS_ENABLED, true)
+    sc = new SparkContext(conf)
+    // Advance the 64-bit counter to just before Int.MaxValue
+    val nextLongRddIdField = sc.getClass.getDeclaredField("nextLongRddId")
+    nextLongRddIdField.setAccessible(true)
+    val counter = nextLongRddIdField.get(sc)
+      .asInstanceOf[java.util.concurrent.atomic.AtomicLong]
+    counter.set(Int.MaxValue - 1L)
+
+    val rddBefore = sc.parallelize(1 to 2) // longId = Int.MaxValue - 1
+    val rddAt = sc.parallelize(1 to 2)     // longId = Int.MaxValue
+    val rddAfter = sc.parallelize(1 to 2)  // longId = Int.MaxValue + 1 (beyond Int range)
+
+    assert(rddBefore.longId === Int.MaxValue - 1L)
+    assert(rddAt.longId === Int.MaxValue.toLong)
+    assert(rddAfter.longId === Int.MaxValue + 1L, "longId must not overflow past Int.MaxValue")
+    assert(rddAfter.longId > 0, "longId must remain positive")
+    // All three ids must be distinct
+    assert(Set(rddBefore.longId, rddAt.longId, rddAfter.longId).size === 3)
+    // id is always -1 when the flag is on
+    assert(rddAfter.id === -1)
+  }
+
+  test("SPARK-41246: newRddId throws on Int overflow with helpful message") {
+    val conf = new SparkConf().setAppName("test").setMaster("local")
+      .set(LONG_RDD_IDS_ENABLED, false)
+    sc = new SparkContext(conf)
+    // Force the counter past Int.MaxValue by injecting a negative value directly
+    val nextRddIdField = sc.getClass.getDeclaredField("nextRddId")
+    nextRddIdField.setAccessible(true)
+    val counter = nextRddIdField.get(sc).asInstanceOf[java.util.concurrent.atomic.AtomicInteger]
+    counter.set(Int.MaxValue)
+    sc.newRddId() // consumes Int.MaxValue - still OK
+    val ex = intercept[IllegalStateException] { sc.newRddId() }
+    assert(ex.getMessage.contains(LONG_RDD_IDS_ENABLED.key))
+  }
+
+  test("SPARK-41246: RDD creation throws on Int overflow when flag is disabled") {
+    val conf = new SparkConf().setAppName("test").setMaster("local")
+      .set(LONG_RDD_IDS_ENABLED, false)
+    sc = new SparkContext(conf)
+    val nextRddIdField = sc.getClass.getDeclaredField("nextRddId")
+    nextRddIdField.setAccessible(true)
+    val counter = nextRddIdField.get(sc).asInstanceOf[java.util.concurrent.atomic.AtomicInteger]
+
+    // Set counter to Int.MaxValue: getAndIncrement returns Int.MaxValue (the last valid id)
+    counter.set(Int.MaxValue)
+
+    val rddAtMax = sc.parallelize(1 to 2)
+    assert(rddAtMax.longId === Int.MaxValue.toLong)
+    assert(rddAtMax.id === Int.MaxValue)
+
+    // The next RDD creation must fail with a clear message pointing to the flag
+    val ex = intercept[IllegalStateException] { sc.parallelize(1 to 2) }
+    assert(ex.getMessage.contains(LONG_RDD_IDS_ENABLED.key))
+  }
 }
 
 object SparkContextSuite {

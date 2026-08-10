@@ -21,7 +21,7 @@ import java.io._
 import java.net.URI
 import java.util.{Arrays, Locale, Properties, ServiceLoader, UUID}
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReference}
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong, AtomicReference}
 
 import scala.collection.Map
 import scala.collection.concurrent.{Map => ScalaConcurrentMap}
@@ -311,7 +311,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
   // Keeps track of all persisted RDDs
   private[spark] val persistentRdds = {
-    val map: ConcurrentMap[Int, RDD[_]] = new MapMaker().weakValues().makeMap[Int, RDD[_]]()
+    val map: ConcurrentMap[Long, RDD[_]] = new MapMaker().weakValues().makeMap[Long, RDD[_]]()
     map.asScala
   }
   def statusTracker: SparkStatusTracker = _statusTracker
@@ -2108,7 +2108,9 @@ class SparkContext(config: SparkConf) extends Logging {
    *
    * @note This does not necessarily mean the caching or computation was successful.
    */
-  def getPersistentRDDs: Map[Int, RDD[_]] = persistentRdds.toMap
+  def getPersistentRDDs: Map[Int, RDD[_]] = persistentRdds.map {
+    case (id, rdd) => (id.toInt, rdd)
+  }.toMap
 
   /**
    * :: DeveloperApi ::
@@ -2153,17 +2155,20 @@ class SparkContext(config: SparkConf) extends Logging {
    * Register an RDD to be persisted in memory and/or disk storage
    */
   private[spark] def persistRDD(rdd: RDD[_]): Unit = {
-    persistentRdds(rdd.id) = rdd
+    persistentRdds(rdd.longId) = rdd
   }
 
   /**
    * Unpersist an RDD from memory and/or disk storage
    */
-  private[spark] def unpersistRDD(rddId: Int, blocking: Boolean): Unit = {
+  private[spark] def unpersistRDD(rddId: Long, blocking: Boolean): Unit = {
     env.blockManager.master.removeRdd(rddId, blocking)
     persistentRdds.remove(rddId)
     listenerBus.post(SparkListenerUnpersistRDD(rddId))
   }
+
+  private[spark] def unpersistRDD(rddId: Int, blocking: Boolean): Unit =
+    unpersistRDD(rddId.toLong, blocking)
 
   /**
    * Adds a JAR dependency for all tasks to be executed on this `SparkContext` in the future.
@@ -2902,9 +2907,25 @@ class SparkContext(config: SparkConf) extends Logging {
   private[spark] def newShuffleId(): Int = nextShuffleId.getAndIncrement()
 
   private val nextRddId = new AtomicInteger(0)
+  private val nextLongRddId = new AtomicLong(0)
 
-  /** Register a new RDD, returning its RDD ID */
-  private[spark] def newRddId(): Int = nextRddId.getAndIncrement()
+  /** Register a new RDD, returning its RDD ID as a Long. */
+  private[spark] def newLongRddId(): Long = {
+    if (conf.get(org.apache.spark.internal.config.LONG_RDD_IDS_ENABLED)) {
+      nextLongRddId.getAndIncrement()
+    } else {
+      val id = nextRddId.getAndIncrement()
+      if (id < 0) {
+        throw new IllegalStateException(
+          s"RDD ID counter overflowed (reached $id). Enable 64-bit RDD IDs by setting " +
+            s"${org.apache.spark.internal.config.LONG_RDD_IDS_ENABLED.key}=true.")
+      }
+      id.toLong
+    }
+  }
+
+  /** Register a new RDD, returning its RDD ID. Use newLongRddId() for new code. */
+  private[spark] def newRddId(): Int = newLongRddId().toInt
 
   /**
    * Registers listeners specified in spark.extraListeners, then starts the listener bus.

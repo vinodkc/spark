@@ -43,11 +43,11 @@ private[spark] class StorageStatus(
   /**
    * Internal representation of the blocks stored in this block manager.
    */
-  private val _rddBlocks = new mutable.HashMap[Int, mutable.Map[BlockId, BlockStatus]]
+  private val _rddBlocks = new mutable.HashMap[Long, mutable.Map[BlockId, BlockStatus]]
   private val _nonRddBlocks = new mutable.HashMap[BlockId, BlockStatus]
 
   private case class RddStorageInfo(memoryUsage: Long, diskUsage: Long, level: StorageLevel)
-  private val _rddStorageInfo = new mutable.HashMap[Int, RddStorageInfo]
+  private val _rddStorageInfo = new mutable.HashMap[Long, RddStorageInfo]
 
   private case class NonRddStorageInfo(var onHeapUsage: Long, var offHeapUsage: Long,
       var diskUsage: Long)
@@ -87,7 +87,7 @@ private[spark] class StorageStatus(
     updateStorageInfo(blockId, blockStatus)
     blockId match {
       case RDDBlockId(rddId, _) =>
-        _rddBlocks.getOrElseUpdate(rddId, new mutable.HashMap)(blockId) = blockStatus
+        _rddBlocks.getOrElseUpdate(rddId.toLong, new mutable.HashMap)(blockId) = blockStatus
       case _ =>
         _nonRddBlocks(blockId) = blockStatus
     }
@@ -101,7 +101,7 @@ private[spark] class StorageStatus(
   def getBlock(blockId: BlockId): Option[BlockStatus] = {
     blockId match {
       case RDDBlockId(rddId, _) =>
-        _rddBlocks.get(rddId).flatMap(_.get(blockId))
+        _rddBlocks.get(rddId.toLong).flatMap(_.get(blockId))
       case _ =>
         _nonRddBlocks.get(blockId)
     }
@@ -148,7 +148,9 @@ private[spark] class StorageStatus(
   def diskUsed: Long = _nonRddStorageInfo.diskUsage + _rddBlocks.keys.toSeq.map(diskUsedByRdd).sum
 
   /** Return the disk space used by the given RDD in this block manager in O(1) time. */
-  def diskUsedByRdd(rddId: Int): Long = _rddStorageInfo.get(rddId).map(_.diskUsage).getOrElse(0L)
+  def diskUsedByRdd(rddId: Long): Long = _rddStorageInfo.get(rddId).map(_.diskUsage).getOrElse(0L)
+
+  def diskUsedByRdd(rddId: Int): Long = diskUsedByRdd(rddId.toLong)
 
   /**
    * Update the relevant storage info, taking into account any existing status for this block.
@@ -162,7 +164,7 @@ private[spark] class StorageStatus(
     // Compute new info from old info
     val (oldMem, oldDisk) = blockId match {
       case RDDBlockId(rddId, _) =>
-        _rddStorageInfo.get(rddId)
+        _rddStorageInfo.get(rddId.toLong)
           .map { case RddStorageInfo(mem, disk, _) => (mem, disk) }
           .getOrElse((0L, 0L))
       case _ if !level.useOffHeap =>
@@ -178,9 +180,9 @@ private[spark] class StorageStatus(
       case RDDBlockId(rddId, _) =>
         // If this RDD is no longer persisted, remove it
         if (newMem + newDisk == 0) {
-          _rddStorageInfo.remove(rddId)
+          _rddStorageInfo.remove(rddId.toLong)
         } else {
-          _rddStorageInfo(rddId) = RddStorageInfo(newMem, newDisk, level)
+          _rddStorageInfo(rddId.toLong) = RddStorageInfo(newMem, newDisk, level)
         }
       case _ =>
         if (!level.useOffHeap) {

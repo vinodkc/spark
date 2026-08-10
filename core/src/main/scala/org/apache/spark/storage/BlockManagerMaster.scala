@@ -221,7 +221,7 @@ class BlockManagerMaster(
   }
 
   /** Remove all blocks belonging to the given RDD. */
-  def removeRdd(rddId: Int, blocking: Boolean): Unit = {
+  def removeRdd(rddId: Long, blocking: Boolean): Unit = {
     val future = driverEndpoint.askSync[Future[Seq[Int]]](RemoveRdd(rddId))
     future.failed.foreach(e =>
       logWarning(log"Failed to remove RDD ${MDC(RDD_ID, rddId)} - " +

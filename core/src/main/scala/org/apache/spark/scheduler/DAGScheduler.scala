@@ -249,7 +249,7 @@ private[spark] class DAGScheduler(
     if (injectShuffleFetchFailuresCleanerAttached) return
     sc.cleaner.foreach { cleaner =>
       cleaner.attachListener(new CleanerListener {
-        override def rddCleaned(rddId: Int): Unit = {}
+        override def rddCleaned(rddId: Long): Unit = {}
         override def shuffleCleaned(shuffleId: Int): Unit = {
           injectShuffleFetchFailuresCorruptedAttempt.remove(shuffleId)
           injectShuffleFetchFailuresPendingDelayedCorruption.remove(shuffleId)

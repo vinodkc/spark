@@ -145,8 +145,21 @@ abstract class RDD[T: ClassTag](
   /** The SparkContext that created this RDD. */
   def sparkContext: SparkContext = sc
 
-  /** A unique ID for this RDD (within its SparkContext). */
-  val id: Int = sc.newRddId()
+  /**
+   * A unique 64-bit ID for this RDD (within its SparkContext).
+   *
+   * When `spark.rdd.longIds.enabled` is false (the default), this equals `id.toLong`.
+   * When that flag is true, this is the canonical identifier and `id` returns -1.
+   */
+  val longId: Long = sc.newLongRddId()
+
+  /**
+   * A unique ID for this RDD (within its SparkContext).
+   *
+   * When `spark.rdd.longIds.enabled` is true, this field returns -1 and `longId` holds the
+   * canonical identifier. Use `longId` in new code.
+   */
+  val id: Int = if (sc.conf.get(LONG_RDD_IDS_ENABLED)) -1 else longId.toInt
 
   /** A friendly name for this RDD */
   @transient var name: String = _
@@ -216,8 +229,8 @@ abstract class RDD[T: ClassTag](
       logWarning(log"RDD ${MDC(RDD_ID, id)} was locally checkpointed, its lineage has been" +
         log" truncated and cannot be recomputed after unpersisting")
     }
-    logInfo(log"Removing RDD ${MDC(RDD_ID, id)} from persistence list")
-    sc.unpersistRDD(id, blocking)
+    logInfo(log"Removing RDD ${MDC(RDD_ID, longId)} from persistence list")
+    sc.unpersistRDD(longId, blocking)
     storageLevel = StorageLevel.NONE
     this
   }
@@ -2069,7 +2082,7 @@ abstract class RDD[T: ClassTag](
       import Utils.bytesToString
 
       val persistence = if (storageLevel != StorageLevel.NONE) storageLevel.description else ""
-      val storageInfo = rdd.context.getRDDStorageInfo(_.id == rdd.id).map(info =>
+      val storageInfo = rdd.context.getRDDStorageInfo(_.longId == rdd.longId).map(info =>
         "    CachedPartitions: %d; MemorySize: %s; DiskSize: %s".format(
           info.numCachedPartitions, bytesToString(info.memSize), bytesToString(info.diskSize)))
       (s"$rdd [$persistence]" +: storageInfo).toImmutableArraySeq
@@ -2215,7 +2228,7 @@ abstract class RDD[T: ClassTag](
       // By default we assume the root RDD is determinate.
       DeterministicLevel.DETERMINATE
     } else {
-      deterministicLevelCandidates.maxBy(_.id)
+      deterministicLevelCandidates.max
     }
   }
 

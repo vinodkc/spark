@@ -63,12 +63,12 @@ private[spark] class ReliableRDDCheckpointData[T: ClassTag](@transient private v
     // Optionally clean our checkpoint files if the reference is out of scope
     if (rdd.conf.get(CLEANER_REFERENCE_TRACKING_CLEAN_CHECKPOINTS)) {
       rdd.context.cleaner.foreach { cleaner =>
-        cleaner.registerRDDCheckpointDataForCleanup(newRDD, rdd.id)
+        cleaner.registerRDDCheckpointDataForCleanup(newRDD, rdd.longId)
       }
     }
 
-    logInfo(log"Done checkpointing RDD ${MDC(RDD_ID, rdd.id)}" +
-      log" to ${MDC(RDD_CHECKPOINT_DIR, cpDir)}, new parent is RDD ${MDC(NEW_RDD_ID, newRDD.id)}")
+    logInfo(log"Done checkpointing RDD ${MDC(RDD_ID, rdd.longId)} to " +
+      log"${MDC(RDD_CHECKPOINT_DIR, cpDir)}, new parent is RDD ${MDC(NEW_RDD_ID, newRDD.longId)}")
     newRDD
   }
 
@@ -77,12 +77,12 @@ private[spark] class ReliableRDDCheckpointData[T: ClassTag](@transient private v
 private[spark] object ReliableRDDCheckpointData extends Logging {
 
   /** Return the path of the directory to which this RDD's checkpoint data is written. */
-  def checkpointPath(sc: SparkContext, rddId: Int): Option[Path] = {
+  def checkpointPath(sc: SparkContext, rddId: Long): Option[Path] = {
     sc.checkpointDir.map { dir => new Path(dir, s"rdd-$rddId") }
   }
 
   /** Clean up the files associated with the checkpoint data for this RDD. */
-  def cleanCheckpoint(sc: SparkContext, rddId: Int): Unit = {
+  def cleanCheckpoint(sc: SparkContext, rddId: Long): Unit = {
     checkpointPath(sc, rddId).foreach { path =>
       path.getFileSystem(sc.hadoopConfiguration).delete(path, true)
     }

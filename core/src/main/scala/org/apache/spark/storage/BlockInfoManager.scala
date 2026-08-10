@@ -175,7 +175,7 @@ private[storage] class BlockInfoManager(trackingCacheVisibility: Boolean = false
 
   // Cache mappings to avoid O(n) scans in remove operations.
   private[this] val rddToBlockIds =
-    new ConcurrentHashMap[Int, ConcurrentHashMap.KeySetView[BlockId, java.lang.Boolean]]()
+    new ConcurrentHashMap[Long, ConcurrentHashMap.KeySetView[BlockId, java.lang.Boolean]]()
   private[this] val broadcastToBlockIds =
     new ConcurrentHashMap[Long, ConcurrentHashMap.KeySetView[BlockId, java.lang.Boolean]]()
   private[this] val sessionToBlockIds =
@@ -610,7 +610,7 @@ private[storage] class BlockInfoManager(trackingCacheVisibility: Boolean = false
   /**
    * Return all blocks belonging to the given RDD.
    */
-  def rddBlockIds(rddId: Int): Seq[BlockId] = getBlockIdsFromMapping(rddToBlockIds, rddId)
+  def rddBlockIds(rddId: Long): Seq[BlockId] = getBlockIdsFromMapping(rddToBlockIds, rddId)
 
   /**
    * Return all blocks belonging to the given broadcast.
@@ -726,7 +726,7 @@ private[storage] class BlockInfoManager(trackingCacheVisibility: Boolean = false
 
     blockId match {
       case rddBlockId: RDDBlockId =>
-        doRemove(rddToBlockIds, rddBlockId.rddId, rddBlockId)
+        doRemove(rddToBlockIds, rddBlockId.rddId.toLong, rddBlockId)
       case broadcastBlockId: BroadcastBlockId =>
         doRemove(broadcastToBlockIds, broadcastBlockId.broadcastId, broadcastBlockId)
       case cacheId: CacheId =>

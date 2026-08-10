@@ -123,7 +123,7 @@ private[spark] abstract class JobEventFilter(
     case e: SparkListenerJobEnd =>
       liveJobs.contains(e.jobId)
     case e: SparkListenerUnpersistRDD =>
-      liveRDDs.contains(e.rddId)
+      e.rddId <= Int.MaxValue && liveRDDs.contains(e.rddId.toInt)
     case e: SparkListenerExecutorMetricsUpdate =>
       e.accumUpdates.exists { case (taskId, stageId, _, _) =>
         liveTasks.contains(taskId) || liveStages.contains(stageId)

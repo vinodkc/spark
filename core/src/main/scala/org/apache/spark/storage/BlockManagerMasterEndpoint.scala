@@ -94,7 +94,7 @@ class BlockManagerMasterEndpoint(
 
   // rddId -> its sealed block ids, letting `removeRdd` reclaim the `sealedChecksums` tombstones by
   // rddId without scanning the whole map.
-  private val sealedBlocksByRdd = new mutable.HashMap[Int, mutable.HashSet[RDDBlockId]]
+  private val sealedBlocksByRdd = new mutable.HashMap[Long, mutable.HashSet[RDDBlockId]]
 
   // Mapping from task id to the set of rdd blocks which are generated from the task.
   private val tidToRddBlockIds = new mutable.HashMap[Long, mutable.HashSet[RDDBlockId]]
@@ -365,7 +365,7 @@ class BlockManagerMasterEndpoint(
       }
   }
 
-  private def removeRdd(rddId: Int): Future[Seq[Int]] = {
+  private def removeRdd(rddId: Long): Future[Seq[Int]] = {
     // First remove the metadata for the given RDD, and then asynchronously remove the blocks
     // from the storage endpoints.
 
@@ -375,7 +375,7 @@ class BlockManagerMasterEndpoint(
     // Find all blocks for the given RDD, remove the block from both blockLocations and
     // the blockManagerInfo that is tracking the blocks and create the futures which asynchronously
     // remove the blocks from storage endpoints and gives back the number of removed blocks
-    val blocks = blockLocations.asScala.keys.flatMap(_.asRDDId).filter(_.rddId == rddId)
+    val blocks = blockLocations.asScala.keys.flatMap(_.asRDDId).filter(_.rddId.toLong == rddId)
     val blocksToDeleteByShuffleService =
       new mutable.HashMap[BlockManagerId, mutable.HashSet[RDDBlockId]]
 

@@ -3247,4 +3247,13 @@ package object config {
       .withBindingPolicy(ConfigBindingPolicy.NOT_APPLICABLE)
       .booleanConf
       .createWithDefault(false)
+
+  private[spark] val LONG_RDD_IDS_ENABLED =
+    ConfigBuilder("spark.rdd.longIds.enabled")
+      .doc("When true, RDD IDs are allocated from a 64-bit counter instead of a 32-bit one. " +
+        "This prevents ID overflow in long-running applications that create more than " +
+        "Int.MaxValue RDDs. Requires all cluster nodes to run Spark 4.3.0 or later.")
+      .version("4.3.0")
+      .booleanConf
+      .createWithDefault(false)
 }

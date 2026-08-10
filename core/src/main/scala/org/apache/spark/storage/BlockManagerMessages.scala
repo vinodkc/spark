@@ -39,7 +39,7 @@ private[spark] object BlockManagerMessages {
   case object DecommissionBlockManager extends ToBlockManagerMasterStorageEndpoint
 
   // Remove all blocks belonging to a specific RDD.
-  case class RemoveRdd(rddId: Int) extends ToBlockManagerMasterStorageEndpoint
+  case class RemoveRdd(rddId: Long) extends ToBlockManagerMasterStorageEndpoint
 
   // Remove all blocks belonging to a specific shuffle.
   case class RemoveShuffle(shuffleId: Int) extends ToBlockManagerMasterStorageEndpoint

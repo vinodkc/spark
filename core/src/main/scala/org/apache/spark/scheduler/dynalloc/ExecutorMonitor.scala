@@ -437,7 +437,7 @@ private[spark] class ExecutorMonitor(
 
   override def onUnpersistRDD(event: SparkListenerUnpersistRDD): Unit = {
     executors.values().asScala.foreach { exec =>
-      exec.cachedBlocks -= event.rddId
+      if (event.rddId <= Int.MaxValue) exec.cachedBlocks -= event.rddId.toInt
       if (exec.cachedBlocks.isEmpty) {
         exec.updateTimeout()
       }
@@ -449,7 +449,7 @@ private[spark] class ExecutorMonitor(
     case _ =>
   }
 
-  override def rddCleaned(rddId: Int): Unit = { }
+  override def rddCleaned(rddId: Long): Unit = { }
 
   override def shuffleCleaned(shuffleId: Int): Unit = {
     // Only post the event if tracking is enabled

@@ -105,10 +105,10 @@ class ContextCleanerSuite extends ContextCleanerSuiteBase {
   test("cleanup RDD") {
     val rdd = newRDD().persist()
     val collected = rdd.collect().toList
-    val tester = new CleanerTester(sc, rddIds = Seq(rdd.id))
+    val tester = new CleanerTester(sc, rddIds = Seq(rdd.longId))
 
     // Explicit cleanup
-    cleaner.doCleanupRDD(rdd.id, blocking = true)
+    cleaner.doCleanupRDD(rdd.longId, blocking = true)
     tester.assertCleanup()
 
     // Verify that RDDs can be re-executed after cleaning up
@@ -188,7 +188,7 @@ class ContextCleanerSuite extends ContextCleanerSuiteBase {
     rdd.count()
 
     // Test that GC does not cause RDD cleanup due to a strong reference
-    val preGCTester = new CleanerTester(sc, rddIds = Seq(rdd.id))
+    val preGCTester = new CleanerTester(sc, rddIds = Seq(rdd.longId))
     runGC()
     intercept[Exception] {
       preGCTester.assertCleanup()(timeout(1.second))
@@ -196,7 +196,7 @@ class ContextCleanerSuite extends ContextCleanerSuiteBase {
 
     // Test that GC causes RDD cleanup after dereferencing the RDD
     // Note rdd is used after previous GC to avoid early collection by the JVM
-    val postGCTester = new CleanerTester(sc, rddIds = Seq(rdd.id))
+    val postGCTester = new CleanerTester(sc, rddIds = Seq(rdd.longId))
     rdd = null // Make RDD out of scope
     runGC()
     postGCTester.assertCleanup()
@@ -290,7 +290,7 @@ class ContextCleanerSuite extends ContextCleanerSuiteBase {
       rdd.checkpoint()
       rdd.cache()
       rdd.collect()
-      var rddId = rdd.id
+      var rddId = rdd.longId
 
       // Confirm the checkpoint directory exists
       assert(ReliableRDDCheckpointData.checkpointPath(sc, rddId).isDefined)
@@ -344,14 +344,14 @@ class ContextCleanerSuite extends ContextCleanerSuiteBase {
     assert(rdd.checkpointData.get.checkpointRDD.isDefined)
 
     // Test that GC does not cause checkpoint cleanup due to a strong reference
-    val preGCTester = new CleanerTester(sc, rddIds = Seq(rdd.id))
+    val preGCTester = new CleanerTester(sc, rddIds = Seq(rdd.longId))
     runGC()
     intercept[Exception] {
       preGCTester.assertCleanup()(timeout(1.second))
     }
 
     // Test that RDD going out of scope does cause the checkpoint blocks to be cleaned up
-    val postGCTester = new CleanerTester(sc, rddIds = Seq(rdd.id))
+    val postGCTester = new CleanerTester(sc, rddIds = Seq(rdd.longId))
     rdd = null
     runGC()
     postGCTester.assertCleanup()
@@ -445,20 +445,20 @@ class ContextCleanerSuite extends ContextCleanerSuiteBase {
  */
 class CleanerTester(
     sc: SparkContext,
-    rddIds: Seq[Int] = Seq.empty,
+    rddIds: Seq[Long] = Seq.empty,
     shuffleIds: Seq[Int] = Seq.empty,
     broadcastIds: Seq[Long] = Seq.empty,
     checkpointIds: Seq[Long] = Seq.empty)
   extends Logging {
 
-  val toBeCleanedRDDIds = new HashSet[Int] ++= rddIds
+  val toBeCleanedRDDIds = new HashSet[Long] ++= rddIds
   val toBeCleanedShuffleIds = new HashSet[Int] ++= shuffleIds
   val toBeCleanedBroadcastIds = new HashSet[Long] ++= broadcastIds
   val toBeCheckpointIds = new HashSet[Long] ++= checkpointIds
   val isDistributed = !sc.isLocal
 
   val cleanerListener = new CleanerListener {
-    def rddCleaned(rddId: Int): Unit = {
+    def rddCleaned(rddId: Long): Unit = {
       toBeCleanedRDDIds.synchronized { toBeCleanedRDDIds -= rddId }
       logInfo("RDD " + rddId + " cleaned")
     }
@@ -609,12 +609,15 @@ class CleanerTester(
     toBeCleanedBroadcastIds.synchronized { toBeCleanedBroadcastIds.isEmpty } &&
     toBeCheckpointIds.synchronized { toBeCheckpointIds.isEmpty }
 
-  private def getRDDBlocks(rddId: Int): Seq[BlockId] = {
+  private def getRDDBlocks(rddId: Long): Seq[BlockId] = {
+    val intId = rddId.toInt
     blockManager.master.getMatchingBlockIds( _ match {
-      case RDDBlockId(`rddId`, _) => true
+      case RDDBlockId(`intId`, _) => true
       case _ => false
     }, askStorageEndpoints = true)
   }
+
+  private def getRDDBlocks(rddId: Int): Seq[BlockId] = getRDDBlocks(rddId.toLong)
 
   private def getShuffleBlocks(shuffleId: Int): Seq[BlockId] = {
     blockManager.master.getMatchingBlockIds( _ match {

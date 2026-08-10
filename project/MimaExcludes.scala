@@ -63,7 +63,21 @@ object MimaExcludes {
     // [SPARK-57987] Add desc field to the SQL REST API Node case class
     ProblemFilters.exclude[DirectMissingMethodProblem]("org.apache.spark.status.api.v1.sql.Node.apply"),
     ProblemFilters.exclude[DirectMissingMethodProblem]("org.apache.spark.status.api.v1.sql.Node.copy"),
-    ProblemFilters.exclude[MissingTypesProblem]("org.apache.spark.status.api.v1.sql.Node$")
+    ProblemFilters.exclude[MissingTypesProblem]("org.apache.spark.status.api.v1.sql.Node$"),
+    // [SPARK-41246][CORE] RDD IDs widened from Int to Long
+    // SparkListenerUnpersistRDD.rddId: Int -> Long
+    ProblemFilters.exclude[DirectMissingMethodProblem](
+      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.rddId"),
+    ProblemFilters.exclude[IncompatibleMethTypeProblem](
+      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.copy"),
+    ProblemFilters.exclude[IncompatibleMethTypeProblem](
+      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.apply"),
+    ProblemFilters.exclude[IncompatibleResultTypeProblem](
+      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.rddId"),
+    ProblemFilters.exclude[IncompatibleResultTypeProblem](
+      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.copy$default$1"),
+    ProblemFilters.exclude[IncompatibleMethTypeProblem](
+      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.this")
   )
 
   // Exclude rules for 4.2.x from 4.1.0

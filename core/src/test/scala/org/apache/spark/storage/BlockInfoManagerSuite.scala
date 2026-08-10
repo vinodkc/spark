@@ -58,6 +58,35 @@ class BlockInfoManagerSuite extends SparkFunSuite {
     new BlockInfo(StorageLevel.MEMORY_ONLY, ClassTag.Any, tellMaster = false)
   }
 
+  private def addAndRelease(bim: BlockInfoManager, blockId: BlockId): Unit = {
+    bim.lockNewBlockForWriting(blockId, newBlockInfo())
+    bim.unlock(blockId, None)
+  }
+
+  // SPARK-41246: rddBlockIds uses Long key - A/C/D scenarios
+
+  test("SPARK-41246 - A: rddBlockIds with Int-range rddId (flag=false default)") {
+    blockInfoManager.registerTask(99)
+    addAndRelease(blockInfoManager, RDDBlockId(5, 0))
+    addAndRelease(blockInfoManager, RDDBlockId(5, 1))
+    assert(blockInfoManager.rddBlockIds(5L).size === 2)
+    assert(blockInfoManager.rddBlockIds(6L).isEmpty)
+  }
+
+  test("SPARK-41246 - C: rddBlockIds at Int.MaxValue") {
+    blockInfoManager.registerTask(99)
+    addAndRelease(blockInfoManager, RDDBlockId(Int.MaxValue, 0))
+    assert(blockInfoManager.rddBlockIds(Int.MaxValue.toLong).size === 1)
+    assert(blockInfoManager.rddBlockIds(Int.MaxValue.toLong - 1L).isEmpty)
+  }
+
+  test("SPARK-41246 - D: rddBlockIds Long key beyond Int range returns empty (Phase-1 limit)") {
+    // RDDBlockId.rddId is still Int; no block can have an id > Int.MaxValue in Phase 1
+    blockInfoManager.registerTask(99)
+    addAndRelease(blockInfoManager, RDDBlockId(Int.MaxValue, 0))
+    assert(blockInfoManager.rddBlockIds(Int.MaxValue.toLong + 1L).isEmpty)
+  }
+
   private def withTaskId[T](taskAttemptId: Long)(block: => T): T = {
     try {
       TaskContext.setTaskContext(
