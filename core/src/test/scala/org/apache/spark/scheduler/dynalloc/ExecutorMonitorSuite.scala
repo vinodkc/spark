@@ -531,7 +531,7 @@ class ExecutorMonitorSuite extends SparkFunSuite {
   }
 
   private def rddUpdate(
-      rddId: Int,
+      rddId: Long,
       splitIndex: Int,
       execId: String,
       level: StorageLevel = StorageLevel.MEMORY_ONLY): SparkListenerBlockUpdated = {
@@ -572,16 +572,14 @@ class ExecutorMonitorSuite extends SparkFunSuite {
     assert(monitor.timedOutExecutors(idleDeadline) === Seq("1"))
   }
 
-  test("SPARK-41246 - D: onUnpersistRDD beyond Int.MaxValue is silently skipped (Phase-1 limit)") {
-    // Int-keyed cachedBlocks cannot hold ids > Int.MaxValue; the event is a no-op.
-    // Verify it at least does not throw and does not corrupt executor state.
+  test("SPARK-41246 - D: onUnpersistRDD beyond Int.MaxValue removes cached block") {
+    val bigId = Int.MaxValue.toLong + 1L
     knownExecs += "1"
     monitor.onExecutorAdded(SparkListenerExecutorAdded(clock.getTimeMillis(), "1", execInfo))
-    monitor.onBlockUpdated(rddUpdate(5, 0, "1"))
-    // Unpersist a *different*, beyond-Int id - must not accidentally remove rddId=5
-    monitor.onUnpersistRDD(SparkListenerUnpersistRDD(Int.MaxValue.toLong + 1L))
-    assert(monitor.timedOutExecutors(storageDeadline) === Seq("1"),
-      "rddId=5 block must still be cached after a no-op beyond-Int unpersist event")
+    monitor.onBlockUpdated(rddUpdate(bigId, 0, "1"))
+    assert(monitor.timedOutExecutors(storageDeadline) === Seq("1"))
+    monitor.onUnpersistRDD(SparkListenerUnpersistRDD(bigId))
+    assert(monitor.timedOutExecutors(idleDeadline) === Seq("1"))
   }
 
 }

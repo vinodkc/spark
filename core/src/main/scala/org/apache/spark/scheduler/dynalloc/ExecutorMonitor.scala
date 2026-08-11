@@ -437,7 +437,7 @@ private[spark] class ExecutorMonitor(
 
   override def onUnpersistRDD(event: SparkListenerUnpersistRDD): Unit = {
     executors.values().asScala.foreach { exec =>
-      if (event.rddId <= Int.MaxValue) exec.cachedBlocks -= event.rddId.toInt
+      exec.cachedBlocks -= event.rddId
       if (exec.cachedBlocks.isEmpty) {
         exec.updateTimeout()
       }
@@ -550,7 +550,7 @@ private[spark] class ExecutorMonitor(
 
     // Maps RDD IDs to the partition IDs stored in the executor.
     // This should only be used in the event thread.
-    val cachedBlocks = new mutable.HashMap[Int, mutable.BitSet]()
+    val cachedBlocks = new mutable.HashMap[Long, mutable.BitSet]()
 
     // The set of shuffles for which shuffle data is held by the executor.
     // This should only be used in the event thread.

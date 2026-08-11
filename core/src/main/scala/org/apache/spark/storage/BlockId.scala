@@ -52,7 +52,7 @@ sealed abstract class BlockId {
 }
 
 @DeveloperApi
-case class RDDBlockId(rddId: Int, splitIndex: Int) extends BlockId {
+case class RDDBlockId(rddId: Long, splitIndex: Int) extends BlockId {
   override def name: String = "rdd_" + rddId + "_" + splitIndex
 }
 
@@ -263,7 +263,7 @@ case class CacheId(sessionUUID: String, hash: String) extends BlockId {
 
 @DeveloperApi
 object BlockId {
-  val RDD = "rdd_([0-9]+)_([0-9]+)".r
+  val RDD = "rdd_(-?[0-9]+)_([0-9]+)".r
   val SHUFFLE = "shuffle_([0-9]+)_([0-9]+)_([0-9]+)".r
   val SHUFFLE_BATCH = "shuffle_([0-9]+)_([0-9]+)_([0-9]+)_([0-9]+)".r
   val SHUFFLE_DATA = "shuffle_([0-9]+)_([0-9]+)_([0-9]+).data".r
@@ -289,7 +289,7 @@ object BlockId {
 
   def apply(name: String): BlockId = name match {
     case RDD(rddId, splitIndex) =>
-      RDDBlockId(rddId.toInt, splitIndex.toInt)
+      RDDBlockId(rddId.toLong, splitIndex.toInt)
     case SHUFFLE(shuffleId, mapId, reduceId) =>
       ShuffleBlockId(shuffleId.toInt, mapId.toLong, reduceId.toInt)
     case SHUFFLE_BATCH(shuffleId, mapId, startReduceId, endReduceId) =>

@@ -3252,8 +3252,8 @@ package object config {
     ConfigBuilder("spark.rdd.longIds.enabled")
       .doc("When true, RDD IDs are allocated from a 64-bit counter instead of a 32-bit one. " +
         "This prevents ID overflow in long-running applications that create more than " +
-        "Int.MaxValue RDDs. Requires all cluster nodes to run Spark 4.3.0 or later.")
-      .version("4.3.0")
+        "Int.MaxValue RDDs. Requires all cluster nodes to run Spark 5.0.0 or later.")
+      .version("5.0.0")
       .booleanConf
       .createWithDefault(false)
 }

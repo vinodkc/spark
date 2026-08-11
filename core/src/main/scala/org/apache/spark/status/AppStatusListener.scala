@@ -78,7 +78,7 @@ private[spark] class AppStatusListener(
   private[spark] val liveExecutors = new HashMap[String, LiveExecutor]()
   private[spark] val deadExecutors = new HashMap[String, LiveExecutor]()
   private val liveTasks = new HashMap[Long, LiveTask]()
-  private val liveRDDs = new HashMap[Int, LiveRDD]()
+  private val liveRDDs = new HashMap[Long, LiveRDD]()
   private val pools = new HashMap[String, SchedulerPool]()
   private val liveResourceProfiles = new HashMap[Int, LiveResourceProfile]()
   private[spark] val liveMiscellaneousProcess = new HashMap[String, LiveMiscellaneousProcess]()
@@ -609,7 +609,7 @@ private[spark] class AppStatusListener(
 
     event.stageInfo.rddInfos.foreach { info =>
       if (info.storageLevel.isValid) {
-        liveUpdate(liveRDDs.getOrElseUpdate(info.id, new LiveRDD(info, info.storageLevel)), now)
+        liveUpdate(liveRDDs.getOrElseUpdate(info.longId, new LiveRDD(info, info.storageLevel)), now)
       }
     }
 
@@ -926,9 +926,7 @@ private[spark] class AppStatusListener(
   }
 
   override def onUnpersistRDD(event: SparkListenerUnpersistRDD): Unit = {
-    liveRDDs.remove(
-      if (event.rddId <= Int.MaxValue) event.rddId.toInt else return
-    ).foreach { liveRDD =>
+    liveRDDs.remove(event.rddId).foreach { liveRDD =>
       val storageLevel = liveRDD.info.storageLevel
 
       // Use RDD partition info to update executor block info.
@@ -1147,7 +1145,7 @@ private[spark] class AppStatusListener(
 
         // Trigger an update on other RDDs so that the free memory information is updated.
         liveRDDs.values.foreach { otherRdd =>
-          if (otherRdd.info.id != block.rddId) {
+          if (otherRdd.info.longId != block.rddId) {
             otherRdd.distributionOpt(exec).foreach { dist =>
               dist.lastUpdate = null
               update(otherRdd, now)

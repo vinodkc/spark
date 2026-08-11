@@ -80,11 +80,13 @@ class BlockInfoManagerSuite extends SparkFunSuite {
     assert(blockInfoManager.rddBlockIds(Int.MaxValue.toLong - 1L).isEmpty)
   }
 
-  test("SPARK-41246 - D: rddBlockIds Long key beyond Int range returns empty (Phase-1 limit)") {
-    // RDDBlockId.rddId is still Int; no block can have an id > Int.MaxValue in Phase 1
+  test("SPARK-41246 - D: rddBlockIds Long key beyond Int range") {
+    val bigId = Int.MaxValue.toLong + 1L
     blockInfoManager.registerTask(99)
-    addAndRelease(blockInfoManager, RDDBlockId(Int.MaxValue, 0))
-    assert(blockInfoManager.rddBlockIds(Int.MaxValue.toLong + 1L).isEmpty)
+    addAndRelease(blockInfoManager, RDDBlockId(bigId, 0))
+    addAndRelease(blockInfoManager, RDDBlockId(bigId, 1))
+    assert(blockInfoManager.rddBlockIds(bigId).size === 2)
+    assert(blockInfoManager.rddBlockIds(bigId + 1L).isEmpty)
   }
 
   private def withTaskId[T](taskAttemptId: Long)(block: => T): T = {

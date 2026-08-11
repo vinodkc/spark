@@ -726,7 +726,7 @@ private[storage] class BlockInfoManager(trackingCacheVisibility: Boolean = false
 
     blockId match {
       case rddBlockId: RDDBlockId =>
-        doRemove(rddToBlockIds, rddBlockId.rddId.toLong, rddBlockId)
+        doRemove(rddToBlockIds, rddBlockId.rddId, rddBlockId)
       case broadcastBlockId: BroadcastBlockId =>
         doRemove(broadcastToBlockIds, broadcastBlockId.broadcastId, broadcastBlockId)
       case cacheId: CacheId =>

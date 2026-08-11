@@ -33,7 +33,9 @@ class RDDInfo(
     val parentIds: Seq[Int],
     val callSite: String = "",
     val scope: Option[RDDOperationScope] = None,
-    val outputDeterministicLevel: DeterministicLevel.Value = DeterministicLevel.DETERMINATE)
+    val outputDeterministicLevel: DeterministicLevel.Value = DeterministicLevel.DETERMINATE,
+    val longId: Long = -1L,
+    val parentLongIds: Seq[Long] = Seq.empty)
   extends Ordered[RDDInfo] {
 
   var numCachedPartitions = 0
@@ -59,6 +61,7 @@ private[spark] object RDDInfo {
   def fromRdd(rdd: RDD[_]): RDDInfo = {
     val rddName = Option(rdd.name).getOrElse(Utils.getFormattedClassName(rdd))
     val parentIds = rdd.dependencies.map(_.rdd.id)
+    val parentLongIds = rdd.dependencies.map(_.rdd.longId)
     val ifCallSiteLongForm = Option(SparkEnv.get).exists(_.conf.get(EVENT_LOG_CALLSITE_LONG_FORM))
 
     val callSite = if (ifCallSiteLongForm) {
@@ -68,6 +71,6 @@ private[spark] object RDDInfo {
     }
     new RDDInfo(rdd.id, rddName, rdd.partitions.length,
       rdd.getStorageLevel, rdd.isBarrier(), parentIds, callSite, rdd.scope,
-      rdd.outputDeterministicLevel)
+      rdd.outputDeterministicLevel, rdd.longId, parentLongIds)
   }
 }

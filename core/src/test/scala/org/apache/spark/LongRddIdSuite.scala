@@ -161,14 +161,21 @@ class LongRddIdSuite extends SparkFunSuite with LocalSparkContext {
     assert(st.getBlock(blockId).isDefined)
   }
 
-  test("StorageUtils - C/D: addBlock/diskUsedByRdd at Int.MaxValue boundary") {
-    // RDDBlockId.rddId is still Int in Phase 1; Int.MaxValue is the max testable id
+  test("StorageUtils - C: addBlock/diskUsedByRdd at Int.MaxValue boundary") {
     val st = makeStorageStatus()
-    val blockId = RDDBlockId(Int.MaxValue, 0)
+    val blockId = RDDBlockId(Int.MaxValue.toLong, 0)
     st.addBlock(blockId, BlockStatus(StorageLevel.DISK_ONLY, 0L, 400L))
     assert(st.diskUsedByRdd(Int.MaxValue.toLong) === 400L)
-    // neighbouring Long keys must not collide
     assert(st.diskUsedByRdd(Int.MaxValue.toLong - 1L) === 0L)
+  }
+
+  test("StorageUtils - D: addBlock/diskUsedByRdd beyond Int.MaxValue") {
+    val bigId = Int.MaxValue.toLong + 1L
+    val st = makeStorageStatus()
+    val blockId = RDDBlockId(bigId, 0)
+    st.addBlock(blockId, BlockStatus(StorageLevel.DISK_ONLY, 0L, 500L))
+    assert(st.diskUsedByRdd(bigId) === 500L)
+    assert(st.diskUsedByRdd(bigId - 1L) === 0L)
   }
 
   test("StorageUtils - A: removing block reduces diskUsed") {
@@ -236,24 +243,25 @@ class LongRddIdSuite extends SparkFunSuite with LocalSparkContext {
   // 6. BasicEventFilter - acceptFn for SparkListenerUnpersistRDD
   // ==========================================================================
 
-  private def filterWithLiveRDDs(ids: Set[Int]): BasicEventFilter =
+  private def filterWithLiveRDDs(ids: Set[Long]): BasicEventFilter =
     new BasicEventFilter(null, Set.empty, Set.empty, Set.empty, ids, Set.empty)
 
   test("BasicEventFilter - A: within Int range accepts event for live RDD") {
-    val accept = filterWithLiveRDDs(Set(10)).acceptFn().lift
+    val accept = filterWithLiveRDDs(Set(10L)).acceptFn().lift
     assert(accept(SparkListenerUnpersistRDD(10L)) === Some(true))
     assert(accept(SparkListenerUnpersistRDD(99L)) === Some(false))
   }
 
   test("BasicEventFilter - C: at Int.MaxValue matches live RDD") {
-    val accept = filterWithLiveRDDs(Set(Int.MaxValue)).acceptFn().lift
+    val accept = filterWithLiveRDDs(Set(Int.MaxValue.toLong)).acceptFn().lift
     assert(accept(SparkListenerUnpersistRDD(Int.MaxValue.toLong)) === Some(true))
   }
 
-  test("BasicEventFilter - D: beyond Int.MaxValue not in live set (Phase-1 limit)") {
-    // ids > Int.MaxValue cannot be in the Int-keyed liveRDDs set -> treated as not live
-    val accept = filterWithLiveRDDs(Set(10)).acceptFn().lift
-    assert(accept(SparkListenerUnpersistRDD(Int.MaxValue.toLong + 1L)) === Some(false))
+  test("BasicEventFilter - D: beyond Int.MaxValue accepted when in live set") {
+    val bigId = Int.MaxValue.toLong + 1L
+    val accept = filterWithLiveRDDs(Set(bigId)).acceptFn().lift
+    assert(accept(SparkListenerUnpersistRDD(bigId)) === Some(true))
+    assert(accept(SparkListenerUnpersistRDD(bigId + 1L)) === Some(false))
   }
 
   // ==========================================================================

@@ -2108,6 +2108,7 @@ class SparkContext(config: SparkConf) extends Logging {
    *
    * @note This does not necessarily mean the caching or computation was successful.
    */
+  // [SPARK-41246] To be widened to Map[Long, RDD[_]] in a future change.
   def getPersistentRDDs: Map[Int, RDD[_]] = persistentRdds.map {
     case (id, rdd) => (id.toInt, rdd)
   }.toMap
@@ -2906,6 +2907,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
   private[spark] def newShuffleId(): Int = nextShuffleId.getAndIncrement()
 
+  // [SPARK-41246] To be retired once the flag and dual-field are removed.
   private val nextRddId = new AtomicInteger(0)
   private val nextLongRddId = new AtomicLong(0)
 

@@ -34,7 +34,35 @@ import com.typesafe.tools.mima.core.*
 object MimaExcludes {
 
   // Exclude rules for 5.0.x from 4.4.0 (add 5.0-specific filters below as needed).
-  lazy val v50excludes: Seq[Problem => Boolean] = v44excludes
+  lazy val v50excludes: Seq[Problem => Boolean] = v44excludes ++ Seq(
+    // [SPARK-41246][CORE] RDD IDs widened from Int to Long
+    // SparkListenerUnpersistRDD.rddId: Int -> Long
+    ProblemFilters.exclude[DirectMissingMethodProblem](
+      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.rddId"),
+    ProblemFilters.exclude[IncompatibleMethTypeProblem](
+      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.copy"),
+    ProblemFilters.exclude[IncompatibleMethTypeProblem](
+      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.apply"),
+    ProblemFilters.exclude[IncompatibleResultTypeProblem](
+      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.rddId"),
+    ProblemFilters.exclude[IncompatibleResultTypeProblem](
+      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.copy$default$1"),
+    ProblemFilters.exclude[IncompatibleMethTypeProblem](
+      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.this"),
+    // RDDBlockId.rddId: Int -> Long
+    ProblemFilters.exclude[DirectMissingMethodProblem](
+      "org.apache.spark.storage.RDDBlockId.rddId"),
+    ProblemFilters.exclude[IncompatibleResultTypeProblem](
+      "org.apache.spark.storage.RDDBlockId.rddId"),
+    ProblemFilters.exclude[IncompatibleMethTypeProblem](
+      "org.apache.spark.storage.RDDBlockId.copy"),
+    ProblemFilters.exclude[IncompatibleMethTypeProblem](
+      "org.apache.spark.storage.RDDBlockId.apply"),
+    ProblemFilters.exclude[IncompatibleResultTypeProblem](
+      "org.apache.spark.storage.RDDBlockId.copy$default$1"),
+    ProblemFilters.exclude[IncompatibleMethTypeProblem](
+      "org.apache.spark.storage.RDDBlockId.this")
+  )
 
   // Exclude rules for 4.4.x from 4.3.0 (add 4.4-specific filters below as needed).
   lazy val v44excludes: Seq[Problem => Boolean] = v43excludes
@@ -64,20 +92,6 @@ object MimaExcludes {
     ProblemFilters.exclude[DirectMissingMethodProblem]("org.apache.spark.status.api.v1.sql.Node.apply"),
     ProblemFilters.exclude[DirectMissingMethodProblem]("org.apache.spark.status.api.v1.sql.Node.copy"),
     ProblemFilters.exclude[MissingTypesProblem]("org.apache.spark.status.api.v1.sql.Node$"),
-    // [SPARK-41246][CORE] RDD IDs widened from Int to Long
-    // SparkListenerUnpersistRDD.rddId: Int -> Long
-    ProblemFilters.exclude[DirectMissingMethodProblem](
-      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.rddId"),
-    ProblemFilters.exclude[IncompatibleMethTypeProblem](
-      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.copy"),
-    ProblemFilters.exclude[IncompatibleMethTypeProblem](
-      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.apply"),
-    ProblemFilters.exclude[IncompatibleResultTypeProblem](
-      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.rddId"),
-    ProblemFilters.exclude[IncompatibleResultTypeProblem](
-      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.copy$default$1"),
-    ProblemFilters.exclude[IncompatibleMethTypeProblem](
-      "org.apache.spark.scheduler.SparkListenerUnpersistRDD.this")
   )
 
   // Exclude rules for 4.2.x from 4.1.0

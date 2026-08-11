@@ -375,7 +375,7 @@ class BlockManagerMasterEndpoint(
     // Find all blocks for the given RDD, remove the block from both blockLocations and
     // the blockManagerInfo that is tracking the blocks and create the futures which asynchronously
     // remove the blocks from storage endpoints and gives back the number of removed blocks
-    val blocks = blockLocations.asScala.keys.flatMap(_.asRDDId).filter(_.rddId.toLong == rddId)
+    val blocks = blockLocations.asScala.keys.flatMap(_.asRDDId).filter(_.rddId == rddId)
     val blocksToDeleteByShuffleService =
       new mutable.HashMap[BlockManagerId, mutable.HashSet[RDDBlockId]]
 
