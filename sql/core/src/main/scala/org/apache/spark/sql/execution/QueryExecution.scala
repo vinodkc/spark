@@ -313,10 +313,23 @@ class QueryExecution(
     // the optimizing phase
     assertCommandExecuted()
     executePhase(QueryPlanningTracker.OPTIMIZATION) {
-      // clone the plan to avoid sharing the plan instance between different stages like analyzing,
-      // optimizing and planning.
+      // Clone the plan to avoid sharing the plan instance between different stages like analyzing,
+      // optimizing and planning.  Also deep-copy any stateful expressions (e.g.
+      // NamedLambdaVariable) across every plan node so that concurrent optimizer runs on sibling
+      // QueryExecutions derived from the same ancestor DataFrame do not race on shared mutable
+      // state inside those expressions (SPARK-58208).
+      val cloned = withCachedData.clone()
+      val planWithFreshExprs = cloned.transformUp {
+        case p: LogicalPlan => p.freshCopyIfContainsStatefulExpressions()
+      }
+      // transformUp creates new plan nodes for any node whose expressions changed, and those
+      // new nodes have _analyzed=false (it is a var, not a tag, so copyTagsFrom does not carry
+      // it).  The plan originated from an already-analyzed plan and the deep copy only replaced
+      // stateful expression instances without altering structure or ExprIds, so it is safe to
+      // re-mark it as analyzed before handing it to the optimizer.
+      planWithFreshExprs.setAnalyzed()
       val plan =
-        sparkSession.sessionState.optimizer.executeAndTrack(withCachedData.clone(), tracker)
+        sparkSession.sessionState.optimizer.executeAndTrack(planWithFreshExprs, tracker)
       // We do not want optimized plans to be re-analyzed as literals that have been constant
       // folded and such can cause issues during analysis. While `clone` should maintain the
       // `analyzed` state of the LogicalPlan, we set the plan as analyzed here as well out of

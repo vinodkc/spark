@@ -254,6 +254,47 @@ abstract class QueryPlan[PlanType <: QueryPlan[PlanType]]
   }
 
   /**
+   * Returns a copy of this plan node where every stateful expression (and any expression whose
+   * subtree contains a stateful expression) is replaced with a fresh uninitialized copy.
+   *
+   * The traversal mirrors [[mapExpressions]] but differs in two ways that prevent sharing
+   * the body: (1) change detection uses reference equality (`ne`) rather than structural
+   * equality (`fastEquals`), because [[Expression.freshCopyIfContainsStatefulExpression]]
+   * may return a structurally equal but newly allocated object that `fastEquals` would
+   * incorrectly classify as unchanged; (2) the transform does not wrap the call in
+   * `CurrentOrigin.withOrigin` because we are replacing a node, not transforming it.
+   *
+   * If no expressions in this node contain stateful sub-expressions, the original node is
+   * returned unchanged.
+   */
+  def freshCopyIfContainsStatefulExpressions(): this.type = {
+    var changed = false
+
+    @scala.annotation.nowarn("cat=deprecation")
+    def recursiveTransform(arg: Any): AnyRef = arg match {
+      case e: Expression =>
+        val newE = e.freshCopyIfContainsStatefulExpression()
+        if (newE ne e) {
+          changed = true
+          newE
+        } else {
+          e
+        }
+      case Some(value) => Some(recursiveTransform(value))
+      case m: Map[_, _] => m
+      case d: DataType => d // Avoid unpacking Structs
+      case stream: Stream[_] => stream.map(recursiveTransform).force
+      case lazyList: LazyList[_] => lazyList.map(recursiveTransform).force
+      case seq: Iterable[_] => seq.map(recursiveTransform)
+      case other: AnyRef => other
+      case null => null
+    }
+
+    val newArgs = mapProductIterator(recursiveTransform)
+    if (changed) makeCopy(newArgs).asInstanceOf[this.type] else this
+  }
+
+  /**
    * Apply a map function to each expression present in this query operator, and return a new
    * query operator based on the mapped expressions.
    */

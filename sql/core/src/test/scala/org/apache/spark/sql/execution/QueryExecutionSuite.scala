@@ -16,6 +16,8 @@
  */
 package org.apache.spark.sql.execution
 
+import java.util.concurrent.{CountDownLatch, Executors}
+
 import scala.collection.mutable
 import scala.concurrent.duration.DurationInt
 import scala.io.Source
@@ -36,6 +38,7 @@ import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStag
 import org.apache.spark.sql.execution.datasources.v2.ShowTablesExec
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.test.SharedSparkSession
 import org.apache.spark.storage.ShuffleIndexBlockId
@@ -669,6 +672,92 @@ class QueryExecutionSuite extends SharedSparkSession {
       assert(trackerAnalyzed != null)
       assert(trackerReadyForExecution != null)
     }
+  }
+
+  // Helper: run THREADS concurrent collects on sibling DataFrames, verify every row.
+  private def runConcurrentCollect(
+      branches: Array[org.apache.spark.sql.DataFrame],
+      verify: org.apache.spark.sql.Row => Boolean,
+      label: String): Unit = {
+    val THREADS = branches.length
+    val results = new Array[Array[org.apache.spark.sql.Row]](THREADS)
+    val latch = new CountDownLatch(THREADS)
+    val pool = Executors.newFixedThreadPool(THREADS)
+    try {
+      (0 until THREADS).foreach { k =>
+        pool.submit(new Runnable {
+          override def run(): Unit = {
+            latch.countDown()
+            latch.await()
+            results(k) = branches(k).collect()
+          }
+        })
+      }
+    } finally {
+      pool.shutdown()
+      pool.awaitTermination(60, java.util.concurrent.TimeUnit.SECONDS)
+    }
+    for (k <- 0 until THREADS) {
+      assert(results(k) != null, s"$label: branch $k returned null")
+      val bad = results(k).count(r => !verify(r))
+      assert(bad == 0, s"$label: branch $k had $bad corrupted rows out of ${results(k).length}")
+    }
+  }
+
+  test("SPARK-58208: concurrent collect via QE.optimizedPlan sharing NamedLambdaVariable") {
+    // Sibling DataFrames derived from the same base (spark.range) share expression objects
+    // including NamedLambdaVariable.  Concurrent QE.optimizedPlan runs must not race.
+    // M=1000 gives each row a 1000-element sequence, widening the race window enough to
+    // produce visible corruption on multi-socket hardware when the fix is absent.
+    val N = 50
+    val M = 1000
+    val THREADS = 4
+    val base = spark
+      .range(N)
+      .select(
+        col("id"),
+        transform(
+          sequence(col("id") * M, col("id") * M + M - 1),
+          x => x + 1
+        ).alias("t")
+      )
+    val branches = (0 until THREADS).map(_ => base.select("id", "t")).toArray
+    runConcurrentCollect(
+      branches,
+      r => {
+        val id = r.getLong(0)
+        val expected = (id * M + 1L to id * M + M).toSeq
+        r.getSeq[Long](1) == expected
+      },
+      "QE.optimizedPlan")
+  }
+
+  test("SPARK-58208: ConvertToLocalRelation does not race on shared NamedLambdaVariable") {
+    // A VALUES-based DataFrame becomes a LocalRelation; ConvertToLocalRelation evaluates
+    // its projection driver-side during optimization.  Sibling DataFrames share the same
+    // NamedLambdaVariable instance, so concurrent optimization races on its AtomicReference.
+    val N = 50
+    val M = 1000
+    val THREADS = 4
+    val vals = (0 until N).map(i => s"($i)").mkString(",")
+    val base = spark
+      .sql(s"SELECT id FROM VALUES $vals AS t(id)")
+      .select(
+        col("id"),
+        transform(
+          sequence(col("id") * M, col("id") * M + M - 1),
+          x => x + 1
+        ).alias("t")
+      )
+    val branches = (0 until THREADS).map(_ => base.select("id", "t")).toArray
+    runConcurrentCollect(
+      branches,
+      r => {
+        val id = r.getLong(0)
+        val expected = (id * M + 1L to id * M + M).toSeq
+        r.getSeq[Long](1) == expected
+      },
+      "ConvertToLocalRelation")
   }
 }
 

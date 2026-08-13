@@ -2789,8 +2789,15 @@ object ConvertToLocalRelation extends Rule[LogicalPlan] {
     _.containsPattern(LOCAL_RELATION), ruleId) {
     case Project(projectList, LocalRelation(output, data, isStreaming, stream))
         if !projectList.exists(hasUnevaluableExpr) =>
-      val projection = new InterpretedMutableProjection(projectList, output)
+      // Fresh-copy stateful expressions (e.g. NamedLambdaVariable) before evaluation so that
+      // concurrent optimizer runs on sibling QueryExecutions that share the same expression
+      // objects do not race on mutable state inside those expressions (SPARK-58208).
+      val freshProjectList = projectList.map(
+        _.freshCopyIfContainsStatefulExpression().asInstanceOf[NamedExpression])
+      val projection = new InterpretedMutableProjection(freshProjectList, output)
       projection.initialize(0)
+      // toAttribute extracts only ExprId/name/dataType, all of which are preserved by
+      // freshCopyIfContainsStatefulExpression, so the original projectList is correct here.
       LocalRelation(projectList.map(_.toAttribute), data.map(projection(_).copy()),
         isStreaming, stream)
 
@@ -2802,7 +2809,8 @@ object ConvertToLocalRelation extends Rule[LogicalPlan] {
 
     case Filter(condition, LocalRelation(output, data, isStreaming, stream))
         if !hasUnevaluableExpr(condition) =>
-      val predicate = Predicate.create(condition, output)
+      val freshCondition = condition.freshCopyIfContainsStatefulExpression()
+      val predicate = Predicate.create(freshCondition, output)
       predicate.initialize(0)
       LocalRelation(output, data.filter(row => predicate.eval(row)), isStreaming, stream)
   }

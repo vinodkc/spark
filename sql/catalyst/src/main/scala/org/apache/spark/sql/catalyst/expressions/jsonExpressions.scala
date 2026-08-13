@@ -1029,6 +1029,13 @@ case class StructsToJson(
 
   override def nodePatternsInternal(): Seq[TreePattern] = Seq(RUNTIME_REPLACEABLE)
 
+  // The evaluator is a @transient lazy val pinned into a Literal by ReplaceExpressions
+  // (Optimizer "Finish Analysis" batch).  Marking stateful ensures the deep-copy in
+  // QueryExecution.optimizedPlan (SPARK-58208) creates a fresh StructsToJson instance
+  // per QueryExecution *before* ReplaceExpressions runs, so each thread initialises its
+  // own evaluator rather than sharing the one materialised by the first thread.
+  override def stateful: Boolean = true
+
   def this(options: Map[String, String], child: Expression) = this(options, child, None)
 
   // Used in `FunctionRegistry`
