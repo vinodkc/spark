@@ -611,7 +611,8 @@ object ListAggOverflow {
     Examples:
       > SELECT _FUNC_(col) FROM VALUES ('a'), ('b'), ('c') AS tab(col);
        abc
-      > SELECT _FUNC_(col) WITHIN GROUP (ORDER BY col DESC) FROM VALUES ('a'), ('b'), ('c') AS tab(col);
+      > SELECT _FUNC_(col) WITHIN GROUP (ORDER BY col DESC)
+          FROM VALUES ('a'), ('b'), ('c') AS tab(col);
        cba
       > SELECT _FUNC_(col) FROM VALUES ('a'), (NULL), ('b') AS tab(col);
        ab
@@ -769,7 +770,7 @@ case class ListAgg(
     if (buffer.nonEmpty) {
       val sortedBuffer = sortBuffer(buffer)
       val result = concatSkippingNulls(sortedBuffer)
-      applyOverflow(result)
+      applyOverflow(result, sortedBuffer)
     } else {
       null
     }
@@ -780,7 +781,7 @@ case class ListAgg(
    * When [[SQLConf.LISTAGG_MAX_RESULT_LENGTH]] is zero (the default), this method is a no-op
    * and [[onOverflow]] has no observable effect.
    */
-  private[this] def applyOverflow(result: Any): Any = {
+  private[this] def applyOverflow(result: Any, sortedBuffer: mutable.ArrayBuffer[Any]): Any = {
     val maxLen = SQLConf.get.listaggMaxResultLength
     if (maxLen <= 0 || onOverflow == ListAggOverflow.None || result == null) {
       return result
@@ -803,7 +804,13 @@ case class ListAgg(
               val targetBytes = Math.max(0L, maxLen - indBytes).toInt
               val truncated = truncateUtf8AtBytes(str, targetBytes)
               if (withCount) {
-                val omitted = countOmitted(str, truncated)
+                val delimStr = {
+                  val v = delimiter.eval()
+                  if (v == null) UTF8String.fromString("") else v.asInstanceOf[UTF8String]
+                }
+                val nonNullItems =
+                  sortedBuffer.filter(_ != null).map(_.asInstanceOf[UTF8String]).toSeq
+                val omitted = countOmittedStringItems(nonNullItems, delimStr, targetBytes)
                 UTF8String.concat(truncated, indStr,
                   UTF8String.fromString(s"($omitted)"))
               } else {
@@ -828,7 +835,14 @@ case class ListAgg(
               val targetLen = Math.max(0L, maxLen - indBytes.length).toInt
               val truncated = arr.take(targetLen)
               if (withCount) {
-                val countBytes = s"(${arr.length - truncated.length})".getBytes("UTF-8")
+                val delimBytes = {
+                  val v = delimiter.eval()
+                  if (v == null) ByteArray.EMPTY_BYTE else v.asInstanceOf[Array[Byte]]
+                }
+                val nonNullItems =
+                  sortedBuffer.filter(_ != null).map(_.asInstanceOf[Array[Byte]]).toSeq
+                val omitted = countOmittedBinaryItems(nonNullItems, delimBytes, targetLen)
+                val countBytes = s"($omitted)".getBytes("UTF-8")
                 truncated ++ indBytes ++ countBytes
               } else {
                 truncated ++ indBytes
@@ -840,11 +854,57 @@ case class ListAgg(
   }
 
   /**
-   * Returns the number of input bytes that were omitted from [[truncated]] compared to [[full]].
-   * Used to produce the (count) suffix for ON OVERFLOW TRUNCATE WITH COUNT.
+   * Counts input values from the sorted buffer that do NOT fit within targetBytes of their
+   * concatenation. Used to compute the (n) suffix for ON OVERFLOW TRUNCATE WITH COUNT.
    */
-  private[this] def countOmitted(full: UTF8String, truncated: UTF8String): Int = {
-    full.numBytes() - truncated.numBytes()
+  private[this] def countOmittedStringItems(
+      items: Seq[UTF8String], delimVal: UTF8String, targetBytes: Int): Int = {
+    var accumulated = 0
+    var omitted = 0
+    var exceeded = false
+    for (item <- items) {
+      if (exceeded) {
+        omitted += 1
+      } else {
+        val addBytes =
+          if (accumulated == 0) item.numBytes()
+          else delimVal.numBytes() + item.numBytes()
+        if (accumulated + addBytes > targetBytes) {
+          exceeded = true
+          omitted += 1
+        } else {
+          accumulated += addBytes
+        }
+      }
+    }
+    omitted
+  }
+
+  /**
+   * Counts input values from the sorted buffer that do NOT fit within targetLen bytes of their
+   * concatenation. Used to compute the (n) suffix for ON OVERFLOW TRUNCATE WITH COUNT.
+   */
+  private[this] def countOmittedBinaryItems(
+      items: Seq[Array[Byte]], delimVal: Array[Byte], targetLen: Int): Int = {
+    var accumulated = 0
+    var omitted = 0
+    var exceeded = false
+    for (item <- items) {
+      if (exceeded) {
+        omitted += 1
+      } else {
+        val addLen =
+          if (accumulated == 0) item.length
+          else delimVal.length + item.length
+        if (accumulated + addLen > targetLen) {
+          exceeded = true
+          omitted += 1
+        } else {
+          accumulated += addLen
+        }
+      }
+    }
+    omitted
   }
 
   /**

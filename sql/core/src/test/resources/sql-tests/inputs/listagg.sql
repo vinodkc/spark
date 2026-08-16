@@ -76,6 +76,7 @@ SELECT LISTAGG(col, ', ' ON OVERFLOW ERROR) WITHIN GROUP (ORDER BY col) FILTER (
 -- ON OVERFLOW TRUNCATE actually truncates when maxResultLength is set
 SET spark.sql.listagg.maxResultLength=5;
 SELECT LISTAGG(col, ', ' ON OVERFLOW TRUNCATE '...') WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c'), ('d') AS t(col);
+SELECT LISTAGG(col, ', ' ON OVERFLOW TRUNCATE '...' WITH COUNT) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c'), ('d') AS t(col);
 SELECT LISTAGG(col, ', ' ON OVERFLOW ERROR) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col);
 SET spark.sql.listagg.maxResultLength=0;
 

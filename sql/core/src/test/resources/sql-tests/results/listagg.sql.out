@@ -638,6 +638,14 @@ a,...
 
 
 -- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW TRUNCATE '...' WITH COUNT) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c'), ('d') AS t(col)
+-- !query schema
+struct<listagg(col, ,  ON OVERFLOW TRUNCATE ... WITH COUNT) WITHIN GROUP (ORDER BY col ASC NULLS FIRST):string>
+-- !query output
+a,...(3)
+
+
+-- !query
 SELECT LISTAGG(col, ', ' ON OVERFLOW ERROR) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col)
 -- !query schema
 struct<>
