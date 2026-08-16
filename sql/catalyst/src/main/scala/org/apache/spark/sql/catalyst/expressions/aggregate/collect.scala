@@ -31,7 +31,7 @@ import org.apache.spark.sql.catalyst.trees.UnaryLike
 import org.apache.spark.sql.catalyst.types.PhysicalDataType
 import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, TypeUtils, UnsafeRowUtils}
 import org.apache.spark.sql.catalyst.util.TypeUtils.toSQLExpr
-import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryErrorsBase}
+import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryErrorsBase, QueryExecutionErrors}
 import org.apache.spark.sql.errors.DataTypeErrors.{toSQLId, toSQLType}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.types.StringTypeWithCollation
@@ -558,20 +558,51 @@ private[aggregate] object CollectTopK {
   }
 }
 
+/**
+ * Controls what happens when the LISTAGG result exceeds the maximum length configured by
+ * [[SQLConf.LISTAGG_MAX_RESULT_LENGTH]].
+ */
+sealed trait ListAggOverflow
+
+object ListAggOverflow {
+
+  /** No overflow handling (default). The result length is unbounded. */
+  case object None extends ListAggOverflow
+
+  /**
+   * Raise a [[org.apache.spark.SparkException]] when the concatenated result would exceed the
+   * configured maximum length.
+   */
+  case object Error extends ListAggOverflow
+
+  /**
+   * Silently truncate the result to the configured maximum length, append the truncation
+   * indicator, and optionally append the count of omitted values.
+   *
+   * @param withCount when true, the count of omitted input values is appended after the indicator.
+   */
+  case class Truncate(withCount: Boolean = false) extends ListAggOverflow
+}
+
 // scalastyle:off line.size.limit
 @ExpressionDescription(
   usage = """
-    _FUNC_(expr[, delimiter])[ WITHIN GROUP (ORDER BY key [ASC | DESC] [,...])] - Returns
-    the concatenation of non-NULL input values, separated by the delimiter ordered by key.
-    If all values are NULL, NULL is returned.
+    _FUNC_(expr[, delimiter] [ON OVERFLOW {ERROR | TRUNCATE [indicator] [{WITH | WITHOUT} COUNT]}])
+    [ WITHIN GROUP (ORDER BY key [ASC | DESC] [,...])] - Returns the concatenation of non-NULL
+    input values, separated by the delimiter ordered by key. If all values are NULL, NULL is
+    returned. ON OVERFLOW controls the behaviour when the result exceeds the length configured by
+    spark.sql.listagg.maxResultLength: ERROR raises an error; TRUNCATE clips and appends the
+    indicator (default "...") and optionally the count of omitted values.
     """,
   arguments = """
     Arguments:
       * expr - a string or binary expression to be concatenated.
         An expression that evaluates to a string or binary.
-      * delimiter - an optional string or binary foldable expression used to separate the input values.
-        If NULL, the concatenation will be performed without a delimiter. Default is NULL.
+      * delimiter - an optional string or binary foldable expression used to separate the input
+        values. If NULL, the concatenation will be performed without a delimiter. Default is NULL.
         An expression that evaluates to a string, binary, or null. Must be a constant.
+      * indicator - an optional truncation indicator appended when ON OVERFLOW TRUNCATE clips the
+        result. Defaults to "..." when omitted. Must be a constant of the same type as expr.
       * key - an optional expression for ordering the input values. Multiple keys can be specified.
         If none are specified, the order of the rows in the result is non-deterministic.
         An expression of any type.
@@ -607,7 +638,9 @@ case class ListAgg(
     delimiter: Expression = Literal(null),
     orderExpressions: Seq[SortOrder] = Nil,
     mutableAggBufferOffset: Int = 0,
-    inputAggBufferOffset: Int = 0)
+    inputAggBufferOffset: Int = 0,
+    onOverflow: ListAggOverflow = ListAggOverflow.None,
+    truncationIndicator: Expression = Literal.create("...", StringType))
   extends Collect[mutable.ArrayBuffer[Any]]
   with SupportsOrderingWithinGroup
   with ImplicitCastInputTypes
@@ -636,10 +669,12 @@ case class ListAgg(
   lazy val needSaveOrderValue: Boolean = !isOrderCompatible(orderExpressions)
 
   def this(child: Expression) =
-    this(child, Literal(null), Nil, 0, 0)
+    this(child, Literal(null), Nil, 0, 0,
+      ListAggOverflow.None, Literal.create("...", StringType))
 
   def this(child: Expression, delimiter: Expression) =
-    this(child, delimiter, Nil, 0, 0)
+    this(child, delimiter, Nil, 0, 0,
+      ListAggOverflow.None, Literal.create("...", StringType))
 
   override def nullable: Boolean = true
 
@@ -655,12 +690,19 @@ case class ListAgg(
 
   override def sql(isDistinct: Boolean): String = {
     val distinct = if (isDistinct) "DISTINCT " else ""
+    val overflowClause = onOverflow match {
+      case ListAggOverflow.None => ""
+      case ListAggOverflow.Error => " ON OVERFLOW ERROR"
+      case ListAggOverflow.Truncate(withCount) =>
+        val countPart = if (withCount) " WITH COUNT" else " WITHOUT COUNT"
+        s" ON OVERFLOW TRUNCATE ${truncationIndicator.sql}$countPart"
+    }
     val withinGroup = if (orderingFilled) {
       s" WITHIN GROUP (ORDER BY ${orderExpressions.map(_.sql).mkString(", ")})"
     } else {
       ""
     }
-    s"$prettyName($distinct${child.sql}, ${delimiter.sql})$withinGroup"
+    s"$prettyName($distinct${child.sql}, ${delimiter.sql}$overflowClause)$withinGroup"
   }
 
   override def inputTypes: Seq[AbstractDataType] =
@@ -673,7 +715,12 @@ case class ListAgg(
       BinaryType,
       NullType
     ) +:
-    orderExpressions.map(_ => AnyDataType)
+    orderExpressions.map(_ => AnyDataType) :+
+    TypeCollection(
+      StringTypeWithCollation(supportsTrimCollation = true),
+      BinaryType,
+      NullType
+    )
 
   override def checkInputDataTypes(): TypeCheckResult = {
     val matchInputTypes = super.checkInputDataTypes()
@@ -690,19 +737,140 @@ case class ListAgg(
       )
     } else if (delimiter.dataType == NullType) {
       // Null is the default empty delimiter so type is not important
+      checkTruncationIndicator()
+    } else {
+      val delimCheck =
+        TypeUtils.checkForSameTypeInputExpr(child.dataType :: delimiter.dataType :: Nil, prettyName)
+      if (delimCheck.isFailure) delimCheck else checkTruncationIndicator()
+    }
+  }
+
+  private[this] def checkTruncationIndicator(): TypeCheckResult = {
+    if (!truncationIndicator.foldable) {
+      DataTypeMismatch(
+        errorSubClass = "NON_FOLDABLE_INPUT",
+        messageParameters = Map(
+          "inputName" -> toSQLId("truncation indicator"),
+          "inputType" -> toSQLType(truncationIndicator.dataType),
+          "inputExpr" -> toSQLExpr(truncationIndicator)
+        )
+      )
+    } else if (truncationIndicator.dataType == NullType) {
+      TypeCheckSuccess
+    } else if (onOverflow == ListAggOverflow.None || onOverflow == ListAggOverflow.Error) {
       TypeCheckSuccess
     } else {
-      TypeUtils.checkForSameTypeInputExpr(child.dataType :: delimiter.dataType :: Nil, prettyName)
+      TypeUtils.checkForSameTypeInputExpr(
+        child.dataType :: truncationIndicator.dataType :: Nil, prettyName)
     }
   }
 
   override def eval(buffer: mutable.ArrayBuffer[Any]): Any = {
     if (buffer.nonEmpty) {
-      val sortedBufferWithoutNulls = sortBuffer(buffer)
-      concatSkippingNulls(sortedBufferWithoutNulls)
+      val sortedBuffer = sortBuffer(buffer)
+      val result = concatSkippingNulls(sortedBuffer)
+      applyOverflow(result)
     } else {
       null
     }
+  }
+
+  /**
+   * Applies the [[onOverflow]] policy to the concatenated result.
+   * When [[SQLConf.LISTAGG_MAX_RESULT_LENGTH]] is zero (the default), this method is a no-op
+   * and [[onOverflow]] has no observable effect.
+   */
+  private[this] def applyOverflow(result: Any): Any = {
+    val maxLen = SQLConf.get.listaggMaxResultLength
+    if (maxLen <= 0 || onOverflow == ListAggOverflow.None || result == null) {
+      return result
+    }
+    dataType match {
+      case _: StringType =>
+        val str = result.asInstanceOf[UTF8String]
+        if (str.numBytes() <= maxLen) {
+          result
+        } else {
+          onOverflow match {
+            case ListAggOverflow.Error =>
+              throw QueryExecutionErrors.listaggResultExceedsMaxLengthError(
+                maxLen, SQLConf.LISTAGG_MAX_RESULT_LENGTH.key)
+            case ListAggOverflow.Truncate(withCount) =>
+              val rawInd = truncationIndicator.eval()
+              val indStr = if (rawInd == null) UTF8String.EMPTY_UTF8
+                           else rawInd.asInstanceOf[UTF8String]
+              val indBytes = indStr.numBytes()
+              val targetBytes = Math.max(0L, maxLen - indBytes).toInt
+              val truncated = truncateUtf8AtBytes(str, targetBytes)
+              if (withCount) {
+                val omitted = countOmitted(str, truncated)
+                UTF8String.concat(truncated, indStr,
+                  UTF8String.fromString(s"($omitted)"))
+              } else {
+                UTF8String.concat(truncated, indStr)
+              }
+            case ListAggOverflow.None => result  // unreachable
+          }
+        }
+      case _: BinaryType =>
+        val arr = result.asInstanceOf[Array[Byte]]
+        if (arr.length <= maxLen) {
+          result
+        } else {
+          onOverflow match {
+            case ListAggOverflow.Error =>
+              throw QueryExecutionErrors.listaggResultExceedsMaxLengthError(
+                maxLen, SQLConf.LISTAGG_MAX_RESULT_LENGTH.key)
+            case ListAggOverflow.Truncate(withCount) =>
+              val rawInd = truncationIndicator.eval()
+              val indBytes = if (rawInd == null) Array.emptyByteArray
+                             else rawInd.asInstanceOf[Array[Byte]]
+              val targetLen = Math.max(0L, maxLen - indBytes.length).toInt
+              val truncated = arr.take(targetLen)
+              if (withCount) {
+                val countBytes = s"(${arr.length - truncated.length})".getBytes("UTF-8")
+                truncated ++ indBytes ++ countBytes
+              } else {
+                truncated ++ indBytes
+              }
+            case ListAggOverflow.None => result  // unreachable
+          }
+        }
+    }
+  }
+
+  /**
+   * Returns the number of input bytes that were omitted from [[truncated]] compared to [[full]].
+   * Used to produce the (count) suffix for ON OVERFLOW TRUNCATE WITH COUNT.
+   */
+  private[this] def countOmitted(full: UTF8String, truncated: UTF8String): Int = {
+    full.numBytes() - truncated.numBytes()
+  }
+
+  /**
+   * Truncates a UTF8String to at most [[maxBytes]] bytes while preserving UTF-8 character
+   * boundaries. The returned string may be shorter than [[maxBytes]] if the boundary falls
+   * inside a multi-byte character.
+   */
+  private[this] def truncateUtf8AtBytes(str: UTF8String, maxBytes: Int): UTF8String = {
+    if (str.numBytes() <= maxBytes) return str
+    val bytes = str.getBytes
+    var i = 0
+    var lastComplete = 0
+    while (i < maxBytes) {
+      val b = bytes(i) & 0xFF
+      val charLen = if (b < 0x80) 1
+                    else if (b < 0xE0) 2
+                    else if (b < 0xF0) 3
+                    else 4
+      if (i + charLen <= maxBytes) {
+        i += charLen
+        lastComplete = i
+      } else {
+        i = maxBytes  // stop
+      }
+    }
+    UTF8String.fromBytes(bytes, 0, lastComplete)
   }
 
   /**
@@ -805,7 +973,10 @@ case class ListAgg(
 
   override protected def convertToBufferElement(value: Any): Any = InternalRow.copyValue(value)
 
-  override def children: Seq[Expression] = child +: delimiter +: orderExpressions
+  // truncationIndicator is always the last child so withNewChildrenInternal can find it at
+  // a fixed offset relative to the end regardless of how many orderExpressions there are.
+  override def children: Seq[Expression] =
+    (child +: delimiter +: orderExpressions) :+ truncationIndicator
 
   /**
    * Utility func to check if given order is defined and different from [[child]].
@@ -984,8 +1155,9 @@ case class ListAgg(
       child = newChildren.head,
       delimiter = newChildren(1),
       orderExpressions = newChildren
-        .drop(2)
-        .map(_.asInstanceOf[SortOrder])
+        .slice(2, newChildren.size - 1)
+        .map(_.asInstanceOf[SortOrder]),
+      truncationIndicator = newChildren.last
     )
 
   private[this] def orderValuesField: Seq[StructField] = {

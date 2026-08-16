@@ -26,7 +26,7 @@ WithCTE
 :- CTERelationDef xxxx, false
 :  +- SubqueryAlias t
 :     +- Project [listagg(col2, NULL)#x AS col#x]
-:        +- Aggregate [col1#x], [listagg(col2#x, null, 0, 0) AS listagg(col2, NULL)#x]
+:        +- Aggregate [col1#x], [listagg(col2#x, null, 0, 0, None, ...) AS listagg(col2, NULL)#x]
 :           +- SubqueryAlias df
 :              +- View (`df`, [col1#x, col2#x])
 :                 +- Project [cast(col1#x as string) AS col1#x, cast(col2#x as string) AS col2#x]
@@ -45,7 +45,7 @@ WithCTE
 :- CTERelationDef xxxx, false
 :  +- SubqueryAlias t
 :     +- Project [string_agg(col2, NULL)#x AS col#x]
-:        +- Aggregate [col1#x], [string_agg(col2#x, null, 0, 0) AS string_agg(col2, NULL)#x]
+:        +- Aggregate [col1#x], [string_agg(col2#x, null, 0, 0, None, ...) AS string_agg(col2, NULL)#x]
 :           +- SubqueryAlias df
 :              +- View (`df`, [col1#x, col2#x])
 :                 +- Project [cast(col1#x as string) AS col1#x, cast(col2#x as string) AS col2#x]
@@ -64,7 +64,7 @@ WithCTE
 :- CTERelationDef xxxx, false
 :  +- SubqueryAlias t
 :     +- Project [listagg(col2, NULL)#x AS col#x]
-:        +- Aggregate [col1#x], [listagg(col2#x, null, 0, 0) AS listagg(col2, NULL)#x]
+:        +- Aggregate [col1#x], [listagg(col2#x, null, 0, 0, None, ...) AS listagg(col2, NULL)#x]
 :           +- SubqueryAlias df
 :              +- View (`df`, [col1#x, col2#x])
 :                 +- Project [cast(col1#x as string) AS col1#x, cast(col2#x as string) AS col2#x]
@@ -79,7 +79,7 @@ WithCTE
 -- !query
 SELECT listagg(col2) FROM df WHERE 1 != 1
 -- !query analysis
-Aggregate [listagg(col2#x, null, 0, 0) AS listagg(col2, NULL)#x]
+Aggregate [listagg(col2#x, null, 0, 0, None, ...) AS listagg(col2, NULL)#x]
 +- Filter NOT (1 = 1)
    +- SubqueryAlias df
       +- View (`df`, [col1#x, col2#x])
@@ -96,7 +96,7 @@ WithCTE
 :- CTERelationDef xxxx, false
 :  +- SubqueryAlias t
 :     +- Project [listagg(col2, |)#x AS col#x]
-:        +- Aggregate [col1#x], [listagg(col2#x, |, 0, 0) AS listagg(col2, |)#x]
+:        +- Aggregate [col1#x], [listagg(col2#x, |, 0, 0, None, ...) AS listagg(col2, |)#x]
 :           +- SubqueryAlias df
 :              +- View (`df`, [col1#x, col2#x])
 :                 +- Project [cast(col1#x as string) AS col1#x, cast(col2#x as string) AS col2#x]
@@ -115,7 +115,7 @@ WithCTE
 :- CTERelationDef xxxx, false
 :  +- SubqueryAlias t
 :     +- Project [listagg(col1, NULL)#x AS col#x]
-:        +- Aggregate [listagg(col1#x, null, 0, 0) AS listagg(col1, NULL)#x]
+:        +- Aggregate [listagg(col1#x, null, 0, 0, None, ...) AS listagg(col1, NULL)#x]
 :           +- SubqueryAlias df
 :              +- View (`df`, [col1#x, col2#x])
 :                 +- Project [cast(col1#x as string) AS col1#x, cast(col2#x as string) AS col2#x]
@@ -134,7 +134,7 @@ WithCTE
 :- CTERelationDef xxxx, false
 :  +- SubqueryAlias t
 :     +- Project [listagg(DISTINCT col1, NULL)#x AS col#x]
-:        +- Aggregate [listagg(distinct col1#x, null, 0, 0) AS listagg(DISTINCT col1, NULL)#x]
+:        +- Aggregate [listagg(distinct col1#x, null, 0, 0, None, ...) AS listagg(DISTINCT col1, NULL)#x]
 :           +- SubqueryAlias df
 :              +- View (`df`, [col1#x, col2#x])
 :                 +- Project [cast(col1#x as string) AS col1#x, cast(col2#x as string) AS col2#x]
@@ -149,7 +149,7 @@ WithCTE
 -- !query
 SELECT listagg(col1) WITHIN GROUP (ORDER BY col1) FROM df
 -- !query analysis
-Aggregate [listagg(col1#x, null, col1#x ASC NULLS FIRST, 0, 0) AS listagg(col1, NULL) WITHIN GROUP (ORDER BY col1 ASC NULLS FIRST)#x]
+Aggregate [listagg(col1#x, null, col1#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(col1, NULL) WITHIN GROUP (ORDER BY col1 ASC NULLS FIRST)#x]
 +- SubqueryAlias df
    +- View (`df`, [col1#x, col2#x])
       +- Project [cast(col1#x as string) AS col1#x, cast(col2#x as string) AS col2#x]
@@ -161,7 +161,7 @@ Aggregate [listagg(col1#x, null, col1#x ASC NULLS FIRST, 0, 0) AS listagg(col1, 
 -- !query
 SELECT listagg(col1) WITHIN GROUP (ORDER BY col1 DESC) FROM df
 -- !query analysis
-Aggregate [listagg(col1#x, null, col1#x DESC NULLS LAST, 0, 0) AS listagg(col1, NULL) WITHIN GROUP (ORDER BY col1 DESC NULLS LAST)#x]
+Aggregate [listagg(col1#x, null, col1#x DESC NULLS LAST, 0, 0, None, ...) AS listagg(col1, NULL) WITHIN GROUP (ORDER BY col1 DESC NULLS LAST)#x]
 +- SubqueryAlias df
    +- View (`df`, [col1#x, col2#x])
       +- Project [cast(col1#x as string) AS col1#x, cast(col2#x as string) AS col2#x]
@@ -175,7 +175,7 @@ SELECT listagg(col1) WITHIN GROUP (ORDER BY col1 DESC) OVER (PARTITION BY col2) 
 -- !query analysis
 Project [listagg(col1, NULL) WITHIN GROUP (ORDER BY col1 DESC NULLS LAST) OVER (PARTITION BY col2 ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)#x]
 +- Project [col1#x, col2#x, listagg(col1, NULL) WITHIN GROUP (ORDER BY col1 DESC NULLS LAST) OVER (PARTITION BY col2 ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)#x, listagg(col1, NULL) WITHIN GROUP (ORDER BY col1 DESC NULLS LAST) OVER (PARTITION BY col2 ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)#x]
-   +- Window [listagg(col1#x, null, col1#x DESC NULLS LAST, 0, 0) windowspecdefinition(col2#x, specifiedwindowframe(RowFrame, unboundedpreceding$(), unboundedfollowing$())) AS listagg(col1, NULL) WITHIN GROUP (ORDER BY col1 DESC NULLS LAST) OVER (PARTITION BY col2 ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)#x], [col2#x]
+   +- Window [listagg(col1#x, null, col1#x DESC NULLS LAST, 0, 0, None, ...) windowspecdefinition(col2#x, specifiedwindowframe(RowFrame, unboundedpreceding$(), unboundedfollowing$())) AS listagg(col1, NULL) WITHIN GROUP (ORDER BY col1 DESC NULLS LAST) OVER (PARTITION BY col2 ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)#x], [col2#x]
       +- Project [col1#x, col2#x]
          +- SubqueryAlias df
             +- View (`df`, [col1#x, col2#x])
@@ -188,7 +188,7 @@ Project [listagg(col1, NULL) WITHIN GROUP (ORDER BY col1 DESC NULLS LAST) OVER (
 -- !query
 SELECT listagg(col1) WITHIN GROUP (ORDER BY col2) FROM df
 -- !query analysis
-Aggregate [listagg(col1#x, null, col2#x ASC NULLS FIRST, 0, 0) AS listagg(col1, NULL) WITHIN GROUP (ORDER BY col2 ASC NULLS FIRST)#x]
+Aggregate [listagg(col1#x, null, col2#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(col1, NULL) WITHIN GROUP (ORDER BY col2 ASC NULLS FIRST)#x]
 +- SubqueryAlias df
    +- View (`df`, [col1#x, col2#x])
       +- Project [cast(col1#x as string) AS col1#x, cast(col2#x as string) AS col2#x]
@@ -204,7 +204,7 @@ WithCTE
 :- CTERelationDef xxxx, false
 :  +- SubqueryAlias t
 :     +- Project [listagg(col1, NULL) WITHIN GROUP (ORDER BY col2 DESC NULLS LAST)#x AS col#x]
-:        +- Aggregate [listagg(col1#x, null, col2#x DESC NULLS LAST, 0, 0) AS listagg(col1, NULL) WITHIN GROUP (ORDER BY col2 DESC NULLS LAST)#x]
+:        +- Aggregate [listagg(col1#x, null, col2#x DESC NULLS LAST, 0, 0, None, ...) AS listagg(col1, NULL) WITHIN GROUP (ORDER BY col2 DESC NULLS LAST)#x]
 :           +- SubqueryAlias df
 :              +- View (`df`, [col1#x, col2#x])
 :                 +- Project [cast(col1#x as string) AS col1#x, cast(col2#x as string) AS col2#x]
@@ -223,7 +223,7 @@ WithCTE
 :- CTERelationDef xxxx, false
 :  +- SubqueryAlias t
 :     +- Project [listagg(col1, |) WITHIN GROUP (ORDER BY col2 DESC NULLS LAST)#x AS col#x]
-:        +- Aggregate [listagg(col1#x, |, col2#x DESC NULLS LAST, 0, 0) AS listagg(col1, |) WITHIN GROUP (ORDER BY col2 DESC NULLS LAST)#x]
+:        +- Aggregate [listagg(col1#x, |, col2#x DESC NULLS LAST, 0, 0, None, ...) AS listagg(col1, |) WITHIN GROUP (ORDER BY col2 DESC NULLS LAST)#x]
 :           +- SubqueryAlias df
 :              +- View (`df`, [col1#x, col2#x])
 :                 +- Project [cast(col1#x as string) AS col1#x, cast(col2#x as string) AS col2#x]
@@ -238,7 +238,7 @@ WithCTE
 -- !query
 SELECT listagg(col1, '|') WITHIN GROUP (ORDER BY col2 DESC) FROM df
 -- !query analysis
-Aggregate [listagg(col1#x, |, col2#x DESC NULLS LAST, 0, 0) AS listagg(col1, |) WITHIN GROUP (ORDER BY col2 DESC NULLS LAST)#x]
+Aggregate [listagg(col1#x, |, col2#x DESC NULLS LAST, 0, 0, None, ...) AS listagg(col1, |) WITHIN GROUP (ORDER BY col2 DESC NULLS LAST)#x]
 +- SubqueryAlias df
    +- View (`df`, [col1#x, col2#x])
       +- Project [cast(col1#x as string) AS col1#x, cast(col2#x as string) AS col2#x]
@@ -250,7 +250,7 @@ Aggregate [listagg(col1#x, |, col2#x DESC NULLS LAST, 0, 0) AS listagg(col1, |) 
 -- !query
 SELECT listagg(col1) WITHIN GROUP (ORDER BY col2 DESC, col1 ASC) FROM df
 -- !query analysis
-Aggregate [listagg(col1#x, null, col2#x DESC NULLS LAST, col1#x ASC NULLS FIRST, 0, 0) AS listagg(col1, NULL) WITHIN GROUP (ORDER BY col2 DESC NULLS LAST, col1 ASC NULLS FIRST)#x]
+Aggregate [listagg(col1#x, null, col2#x DESC NULLS LAST, col1#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(col1, NULL) WITHIN GROUP (ORDER BY col2 DESC NULLS LAST, col1 ASC NULLS FIRST)#x]
 +- SubqueryAlias df
    +- View (`df`, [col1#x, col2#x])
       +- Project [cast(col1#x as string) AS col1#x, cast(col2#x as string) AS col2#x]
@@ -262,7 +262,7 @@ Aggregate [listagg(col1#x, null, col2#x DESC NULLS LAST, col1#x ASC NULLS FIRST,
 -- !query
 SELECT listagg(col1) WITHIN GROUP (ORDER BY col2 DESC, col1 DESC) FROM df
 -- !query analysis
-Aggregate [listagg(col1#x, null, col2#x DESC NULLS LAST, col1#x DESC NULLS LAST, 0, 0) AS listagg(col1, NULL) WITHIN GROUP (ORDER BY col2 DESC NULLS LAST, col1 DESC NULLS LAST)#x]
+Aggregate [listagg(col1#x, null, col2#x DESC NULLS LAST, col1#x DESC NULLS LAST, 0, 0, None, ...) AS listagg(col1, NULL) WITHIN GROUP (ORDER BY col2 DESC NULLS LAST, col1 DESC NULLS LAST)#x]
 +- SubqueryAlias df
    +- View (`df`, [col1#x, col2#x])
       +- Project [cast(col1#x as string) AS col1#x, cast(col2#x as string) AS col2#x]
@@ -278,7 +278,7 @@ WithCTE
 :- CTERelationDef xxxx, false
 :  +- SubqueryAlias t
 :     +- Project [listagg(col1, NULL)#x AS col#x]
-:        +- Aggregate [listagg(col1#x, null, 0, 0) AS listagg(col1, NULL)#x]
+:        +- Aggregate [listagg(col1#x, null, 0, 0, None, ...) AS listagg(col1, NULL)#x]
 :           +- SubqueryAlias __auto_generated_subquery_name
 :              +- LocalRelation [col1#x]
 +- Project [len(col#x) AS len(col)#x, regexp_count(hex(col#x), hex(0xDEAD)) AS regexp_count(hex(col), hex(X'DEAD'))#x, regexp_count(hex(col#x), hex(0xBEEF)) AS regexp_count(hex(col), hex(X'BEEF'))#x]
@@ -293,7 +293,7 @@ WithCTE
 :- CTERelationDef xxxx, false
 :  +- SubqueryAlias t
 :     +- Project [listagg(col1, NULL)#x AS col#x]
-:        +- Aggregate [listagg(col1#x, null, 0, 0) AS listagg(col1, NULL)#x]
+:        +- Aggregate [listagg(col1#x, null, 0, 0, None, ...) AS listagg(col1, NULL)#x]
 :           +- SubqueryAlias __auto_generated_subquery_name
 :              +- LocalRelation [col1#x]
 +- Project [len(col#x) AS len(col)#x, regexp_count(hex(col#x), hex(0xDEAD)) AS regexp_count(hex(col), hex(X'DEAD'))#x, regexp_count(hex(col#x), hex(0xBEEF)) AS regexp_count(hex(col), hex(X'BEEF'))#x]
@@ -308,7 +308,7 @@ WithCTE
 :- CTERelationDef xxxx, false
 :  +- SubqueryAlias t
 :     +- Project [listagg(col1, X'42')#x AS col#x]
-:        +- Aggregate [listagg(col1#x, 0x42, 0, 0) AS listagg(col1, X'42')#x]
+:        +- Aggregate [listagg(col1#x, 0x42, 0, 0, None, ...) AS listagg(col1, X'42')#x]
 :           +- SubqueryAlias __auto_generated_subquery_name
 :              +- LocalRelation [col1#x]
 +- Project [len(col#x) AS len(col)#x, regexp_count(hex(col#x), hex(0x42)) AS regexp_count(hex(col), hex(X'42'))#x, regexp_count(hex(col#x), hex(0xDEAD)) AS regexp_count(hex(col), hex(X'DEAD'))#x, regexp_count(hex(col#x), hex(0xBEEF)) AS regexp_count(hex(col), hex(X'BEEF'))#x]
@@ -323,7 +323,7 @@ WithCTE
 :- CTERelationDef xxxx, false
 :  +- SubqueryAlias t
 :     +- Project [listagg(col1, NULL)#x AS col1#x, listagg(col2, ,)#x AS col2#x]
-:        +- Aggregate [listagg(cast(col1#x as string), null, 0, 0) AS listagg(col1, NULL)#x, listagg(cast(col2#x as string), ,, 0, 0) AS listagg(col2, ,)#x]
+:        +- Aggregate [listagg(cast(col1#x as string), null, 0, 0, None, ...) AS listagg(col1, NULL)#x, listagg(cast(col2#x as string), ,, 0, 0, None, ...) AS listagg(col2, ,)#x]
 :           +- SubqueryAlias df2
 :              +- View (`df2`, [col1#x, col2#x])
 :                 +- Project [cast(col1#x as int) AS col1#x, cast(col2#x as boolean) AS col2#x]
@@ -338,7 +338,7 @@ WithCTE
 -- !query
 SELECT listagg(DISTINCT col, ',') WITHIN GROUP (ORDER BY col) FROM VALUES (1), (2), (2), (3) AS t(col)
 -- !query analysis
-Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
+Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
 +- SubqueryAlias t
    +- LocalRelation [col#x]
 
@@ -346,7 +346,7 @@ Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 
 -- !query
 SELECT listagg(DISTINCT col, ',') WITHIN GROUP (ORDER BY col) FROM VALUES (cast(1 as bigint)), (cast(2 as bigint)), (cast(2 as bigint)), (cast(3 as bigint)) AS t(col)
 -- !query analysis
-Aggregate [listagg(distinct cast(col#xL as string), ,, col#xL ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
+Aggregate [listagg(distinct cast(col#xL as string), ,, col#xL ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
 +- SubqueryAlias t
    +- LocalRelation [col#xL]
 
@@ -354,7 +354,7 @@ Aggregate [listagg(distinct cast(col#xL as string), ,, col#xL ASC NULLS FIRST, 0
 -- !query
 SELECT listagg(DISTINCT col, ',') WITHIN GROUP (ORDER BY col) FROM VALUES (cast(1 as smallint)), (cast(2 as smallint)), (cast(2 as smallint)), (cast(3 as smallint)) AS t(col)
 -- !query analysis
-Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
+Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
 +- SubqueryAlias t
    +- LocalRelation [col#x]
 
@@ -362,7 +362,7 @@ Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 
 -- !query
 SELECT listagg(DISTINCT col, ',') WITHIN GROUP (ORDER BY col) FROM VALUES (cast(1 as tinyint)), (cast(2 as tinyint)), (cast(2 as tinyint)), (cast(3 as tinyint)) AS t(col)
 -- !query analysis
-Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
+Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
 +- SubqueryAlias t
    +- LocalRelation [col#x]
 
@@ -370,7 +370,7 @@ Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 
 -- !query
 SELECT listagg(DISTINCT col, ',') WITHIN GROUP (ORDER BY col) FROM VALUES (cast(1.10 as decimal(10,2))), (cast(2.20 as decimal(10,2))), (cast(2.20 as decimal(10,2))) AS t(col)
 -- !query analysis
-Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
+Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
 +- SubqueryAlias t
    +- LocalRelation [col#x]
 
@@ -378,7 +378,7 @@ Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 
 -- !query
 SELECT listagg(DISTINCT col, ',') WITHIN GROUP (ORDER BY col) FROM VALUES (DATE'2024-01-01'), (DATE'2024-01-02'), (DATE'2024-01-01') AS t(col)
 -- !query analysis
-Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
+Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
 +- SubqueryAlias t
    +- LocalRelation [col#x]
 
@@ -386,7 +386,7 @@ Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 
 -- !query
 SELECT listagg(DISTINCT col, ',') WITHIN GROUP (ORDER BY col) FROM VALUES (TIMESTAMP_NTZ'2024-01-01 10:00:00'), (TIMESTAMP_NTZ'2024-01-02 12:00:00'), (TIMESTAMP_NTZ'2024-01-01 10:00:00') AS t(col)
 -- !query analysis
-Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
+Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
 +- SubqueryAlias t
    +- LocalRelation [col#x]
 
@@ -394,7 +394,7 @@ Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 
 -- !query
 SELECT listagg(DISTINCT col, ',') WITHIN GROUP (ORDER BY col) FROM VALUES (true), (false), (true) AS t(col)
 -- !query analysis
-Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
+Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
 +- SubqueryAlias t
    +- LocalRelation [col#x]
 
@@ -402,7 +402,7 @@ Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 
 -- !query
 SELECT listagg(DISTINCT col, ',') WITHIN GROUP (ORDER BY col) FROM VALUES (INTERVAL '1' MONTH), (INTERVAL '2' MONTH), (INTERVAL '1' MONTH) AS t(col)
 -- !query analysis
-Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
+Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
 +- SubqueryAlias t
    +- LocalRelation [col#x]
 
@@ -410,7 +410,7 @@ Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 
 -- !query
 SELECT listagg(DISTINCT cast(col as string), ',') WITHIN GROUP (ORDER BY col) FROM VALUES (10), (1), (2), (20), (2) AS t(col)
 -- !query analysis
-Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT CAST(col AS STRING), ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
+Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT CAST(col AS STRING), ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
 +- SubqueryAlias t
    +- LocalRelation [col#x]
 
@@ -418,7 +418,7 @@ Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 
 -- !query
 SELECT listagg(DISTINCT col, ',') WITHIN GROUP (ORDER BY col DESC) FROM VALUES (1), (10), (2), (20), (2) AS t(col)
 -- !query analysis
-Aggregate [listagg(distinct cast(col#x as string), ,, col#x DESC NULLS LAST, 0, 0) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col DESC NULLS LAST)#x]
+Aggregate [listagg(distinct cast(col#x as string), ,, col#x DESC NULLS LAST, 0, 0, None, ...) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col DESC NULLS LAST)#x]
 +- SubqueryAlias t
    +- LocalRelation [col#x]
 
@@ -426,7 +426,7 @@ Aggregate [listagg(distinct cast(col#x as string), ,, col#x DESC NULLS LAST, 0, 
 -- !query
 SELECT listagg(DISTINCT col, ',') WITHIN GROUP (ORDER BY col) FROM VALUES (1), (2), (null), (2), (3) AS t(col)
 -- !query analysis
-Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
+Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
 +- SubqueryAlias t
    +- LocalRelation [col#x]
 
@@ -434,7 +434,7 @@ Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 
 -- !query
 SELECT listagg(DISTINCT col, ',') WITHIN GROUP (ORDER BY col NULLS FIRST) FROM VALUES (1), (null), (2), (null) AS t(col)
 -- !query analysis
-Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
+Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT col, ,) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
 +- SubqueryAlias t
    +- LocalRelation [col#x]
 
@@ -442,7 +442,7 @@ Aggregate [listagg(distinct cast(col#x as string), ,, col#x ASC NULLS FIRST, 0, 
 -- !query
 SELECT grp, listagg(DISTINCT col) WITHIN GROUP (ORDER BY col) FROM VALUES (1, 'a'), (1, 'b'), (2, 'a'), (2, 'a'), (1, 'b') AS t(grp, col) GROUP BY grp
 -- !query analysis
-Aggregate [grp#x], [grp#x, listagg(distinct col#x, null, col#x ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT col, NULL) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
+Aggregate [grp#x], [grp#x, listagg(distinct col#x, null, col#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT col, NULL) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
 +- SubqueryAlias t
    +- LocalRelation [grp#x, col#x]
 
@@ -454,7 +454,7 @@ WithCTE
 :- CTERelationDef xxxx, false
 :  +- SubqueryAlias t
 :     +- Project [listagg(DISTINCT col1, X'2C') WITHIN GROUP (ORDER BY col1 ASC NULLS FIRST)#x AS col#x]
-:        +- Aggregate [listagg(distinct col1#x, 0x2C, col1#x ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT col1, X'2C') WITHIN GROUP (ORDER BY col1 ASC NULLS FIRST)#x]
+:        +- Aggregate [listagg(distinct col1#x, 0x2C, col1#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT col1, X'2C') WITHIN GROUP (ORDER BY col1 ASC NULLS FIRST)#x]
 :           +- SubqueryAlias __auto_generated_subquery_name
 :              +- LocalRelation [col1#x]
 +- Project [len(col#x) AS len(col)#x, regexp_count(hex(col#x), hex(0xDEAD)) AS regexp_count(hex(col), hex(X'DEAD'))#x, regexp_count(hex(col#x), hex(0xBEEF)) AS regexp_count(hex(col), hex(X'BEEF'))#x, regexp_count(hex(col#x), hex(0xCAFE)) AS regexp_count(hex(col), hex(X'CAFE'))#x]
@@ -469,7 +469,7 @@ WithCTE
 :- CTERelationDef xxxx, false
 :  +- SubqueryAlias t
 :     +- Project [listagg(DISTINCT col1, X'7C') WITHIN GROUP (ORDER BY col1 ASC NULLS FIRST)#x AS col#x]
-:        +- Aggregate [listagg(distinct col1#x, 0x7C, col1#x ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT col1, X'7C') WITHIN GROUP (ORDER BY col1 ASC NULLS FIRST)#x]
+:        +- Aggregate [listagg(distinct col1#x, 0x7C, col1#x ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT col1, X'7C') WITHIN GROUP (ORDER BY col1 ASC NULLS FIRST)#x]
 :           +- SubqueryAlias __auto_generated_subquery_name
 :              +- LocalRelation [col1#x]
 +- Project [len(col#x) AS len(col)#x, regexp_count(hex(col#x), hex(0xAA)) AS regexp_count(hex(col), hex(X'AA'))#x, regexp_count(hex(col#x), hex(0xBB)) AS regexp_count(hex(col), hex(X'BB'))#x]
@@ -480,7 +480,7 @@ WithCTE
 -- !query
 SELECT grp, hex(listagg(DISTINCT col, X'2C') WITHIN GROUP (ORDER BY col)) FROM VALUES (1, X'AA'), (1, X'BB'), (1, X'AA'), (2, X'CC'), (2, X'CC') AS t(grp, col) GROUP BY grp
 -- !query analysis
-Aggregate [grp#x], [grp#x, hex(listagg(distinct col#x, 0x2C, col#x ASC NULLS FIRST, 0, 0)) AS hex(listagg(DISTINCT col, X'2C') WITHIN GROUP (ORDER BY col ASC NULLS FIRST))#x]
+Aggregate [grp#x], [grp#x, hex(listagg(distinct col#x, 0x2C, col#x ASC NULLS FIRST, 0, 0, None, ...)) AS hex(listagg(DISTINCT col, X'2C') WITHIN GROUP (ORDER BY col ASC NULLS FIRST))#x]
 +- SubqueryAlias t
    +- LocalRelation [grp#x, col#x]
 
@@ -497,7 +497,7 @@ org.apache.spark.sql.catalyst.ExtendedAnalysisException
     "inputType" : "\"ARRAY<STRING>\"",
     "paramIndex" : "first",
     "requiredType" : "(\"STRING\" or \"BINARY\")",
-    "sqlExpr" : "\"listagg(c1, NULL)\""
+    "sqlExpr" : "\"listagg(c1, NULL, ...)\""
   },
   "queryContext" : [ {
     "objectType" : "",
@@ -519,7 +519,7 @@ org.apache.spark.sql.catalyst.ExtendedAnalysisException
   "messageParameters" : {
     "dataType" : "(\"BINARY\" or \"STRING\")",
     "functionName" : "`listagg`",
-    "sqlExpr" : "\"listagg(c1, , )\""
+    "sqlExpr" : "\"listagg(c1, , , ...)\""
   },
   "queryContext" : [ {
     "objectType" : "",
@@ -542,7 +542,7 @@ org.apache.spark.sql.catalyst.ExtendedAnalysisException
     "inputExpr" : "\"col1\"",
     "inputName" : "`delimiter`",
     "inputType" : "\"STRING\"",
-    "sqlExpr" : "\"listagg(col2, col1)\""
+    "sqlExpr" : "\"listagg(col2, col1, ...)\""
   },
   "queryContext" : [ {
     "objectType" : "",
@@ -559,7 +559,7 @@ SELECT listagg(col1) OVER (ORDER BY col1) FROM df
 -- !query analysis
 Project [listagg(col1, NULL) OVER (ORDER BY col1 ASC NULLS FIRST RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)#x]
 +- Project [col1#x, listagg(col1, NULL) OVER (ORDER BY col1 ASC NULLS FIRST RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)#x, listagg(col1, NULL) OVER (ORDER BY col1 ASC NULLS FIRST RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)#x]
-   +- Window [listagg(col1#x, null, 0, 0) windowspecdefinition(col1#x ASC NULLS FIRST, specifiedwindowframe(RangeFrame, unboundedpreceding$(), currentrow$())) AS listagg(col1, NULL) OVER (ORDER BY col1 ASC NULLS FIRST RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)#x], [col1#x ASC NULLS FIRST]
+   +- Window [listagg(col1#x, null, 0, 0, None, ...) windowspecdefinition(col1#x ASC NULLS FIRST, specifiedwindowframe(RangeFrame, unboundedpreceding$(), currentrow$())) AS listagg(col1, NULL) OVER (ORDER BY col1 ASC NULLS FIRST RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)#x], [col1#x ASC NULLS FIRST]
       +- Project [col1#x]
          +- SubqueryAlias df
             +- View (`df`, [col1#x, col2#x])
@@ -577,7 +577,7 @@ org.apache.spark.sql.catalyst.ExtendedAnalysisException
   "errorClass" : "INVALID_WINDOW_SPEC_FOR_AGGREGATION_FUNC",
   "sqlState" : "42601",
   "messageParameters" : {
-    "aggFunc" : "\"listagg(col1, NULL, col1 ASC NULLS FIRST)\""
+    "aggFunc" : "\"listagg(col1, NULL, col1 ASC NULLS FIRST, ...)\""
   },
   "queryContext" : [ {
     "objectType" : "",
@@ -597,7 +597,7 @@ org.apache.spark.sql.catalyst.ExtendedAnalysisException
   "errorClass" : "INVALID_WINDOW_SPEC_FOR_AGGREGATION_FUNC",
   "sqlState" : "42601",
   "messageParameters" : {
-    "aggFunc" : "\"listagg(col1, NULL, col1 ASC NULLS FIRST)\""
+    "aggFunc" : "\"listagg(col1, NULL, col1 ASC NULLS FIRST, ...)\""
   },
   "queryContext" : [ {
     "objectType" : "",
@@ -705,9 +705,93 @@ org.apache.spark.sql.catalyst.ExtendedAnalysisException
 
 
 -- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW ERROR) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query analysis
+Aggregate [listagg(col#x, , , col#x ASC NULLS FIRST, 0, 0, Error, ...) AS listagg(col, ,  ON OVERFLOW ERROR) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
++- SubqueryAlias t
+   +- LocalRelation [col#x]
+
+
+-- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query analysis
+Aggregate [listagg(col#x, , , col#x ASC NULLS FIRST, 0, 0, Truncate(false), ...) AS listagg(col, ,  ON OVERFLOW TRUNCATE ... WITHOUT COUNT) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
++- SubqueryAlias t
+   +- LocalRelation [col#x]
+
+
+-- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW TRUNCATE '...') WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query analysis
+Aggregate [listagg(col#x, , , col#x ASC NULLS FIRST, 0, 0, Truncate(false), ...) AS listagg(col, ,  ON OVERFLOW TRUNCATE ... WITHOUT COUNT) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
++- SubqueryAlias t
+   +- LocalRelation [col#x]
+
+
+-- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW TRUNCATE '...' WITHOUT COUNT) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query analysis
+Aggregate [listagg(col#x, , , col#x ASC NULLS FIRST, 0, 0, Truncate(false), ...) AS listagg(col, ,  ON OVERFLOW TRUNCATE ... WITHOUT COUNT) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
++- SubqueryAlias t
+   +- LocalRelation [col#x]
+
+
+-- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW TRUNCATE '...' WITH COUNT) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query analysis
+Aggregate [listagg(col#x, , , col#x ASC NULLS FIRST, 0, 0, Truncate(true), ...) AS listagg(col, ,  ON OVERFLOW TRUNCATE ... WITH COUNT) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
++- SubqueryAlias t
+   +- LocalRelation [col#x]
+
+
+-- !query
+SELECT LISTAGG(col ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query analysis
+Aggregate [listagg(col#x, null, col#x ASC NULLS FIRST, 0, 0, Truncate(false), ...) AS listagg(col, NULL ON OVERFLOW TRUNCATE ... WITHOUT COUNT) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
++- SubqueryAlias t
+   +- LocalRelation [col#x]
+
+
+-- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW ERROR) WITHIN GROUP (ORDER BY col) FILTER (WHERE col != 'b') FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query analysis
+Aggregate [listagg(col#x, , , col#x ASC NULLS FIRST, 0, 0, Error, ...) FILTER (WHERE NOT (col#x = b)) AS listagg(col, ,  ON OVERFLOW ERROR) WITHIN GROUP (ORDER BY col ASC NULLS FIRST) FILTER (WHERE (NOT (col = b)))#x]
++- SubqueryAlias t
+   +- LocalRelation [col#x]
+
+
+-- !query
+SET spark.sql.listagg.maxResultLength=5
+-- !query analysis
+SetCommand (spark.sql.listagg.maxResultLength,Some(5))
+
+
+-- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW TRUNCATE '...') WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c'), ('d') AS t(col)
+-- !query analysis
+Aggregate [listagg(col#x, , , col#x ASC NULLS FIRST, 0, 0, Truncate(false), ...) AS listagg(col, ,  ON OVERFLOW TRUNCATE ... WITHOUT COUNT) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
++- SubqueryAlias t
+   +- LocalRelation [col#x]
+
+
+-- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW ERROR) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query analysis
+Aggregate [listagg(col#x, , , col#x ASC NULLS FIRST, 0, 0, Error, ...) AS listagg(col, ,  ON OVERFLOW ERROR) WITHIN GROUP (ORDER BY col ASC NULLS FIRST)#x]
++- SubqueryAlias t
+   +- LocalRelation [col#x]
+
+
+-- !query
+SET spark.sql.listagg.maxResultLength=0
+-- !query analysis
+SetCommand (spark.sql.listagg.maxResultLength,Some(0))
+
+
+-- !query
 SELECT listagg(DISTINCT v:a::string, ',') WITHIN GROUP (ORDER BY v:a::string) FROM (SELECT parse_json('{"a": "x"}') v UNION ALL SELECT parse_json('{"a": "y"}') UNION ALL SELECT parse_json('{"a": "x"}'))
 -- !query analysis
-Aggregate [listagg(distinct cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string), ,, cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string) ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT CAST(variant_get(v, $.a) AS a AS STRING), ,) WITHIN GROUP (ORDER BY CAST(variant_get(v, $.a) AS a AS STRING) ASC NULLS FIRST)#x]
+Aggregate [listagg(distinct cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string), ,, cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string) ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT CAST(variant_get(v, $.a) AS a AS STRING), ,) WITHIN GROUP (ORDER BY CAST(variant_get(v, $.a) AS a AS STRING) ASC NULLS FIRST)#x]
 +- SubqueryAlias __auto_generated_subquery_name
    +- Union false, false
       :- Union false, false
@@ -722,7 +806,7 @@ Aggregate [listagg(distinct cast(variant_get(v#x, $.a, VariantType, true, Some(A
 -- !query
 SELECT listagg(v:a::string, ',') WITHIN GROUP (ORDER BY v:a::string) FROM (SELECT parse_json('{"a": "x"}') v UNION ALL SELECT parse_json('{"a": "y"}') UNION ALL SELECT parse_json('{"a": "x"}'))
 -- !query analysis
-Aggregate [listagg(cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string), ,, cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string) ASC NULLS FIRST, 0, 0) AS listagg(CAST(variant_get(v, $.a) AS a AS STRING), ,) WITHIN GROUP (ORDER BY CAST(variant_get(v, $.a) AS a AS STRING) ASC NULLS FIRST)#x]
+Aggregate [listagg(cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string), ,, cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string) ASC NULLS FIRST, 0, 0, None, ...) AS listagg(CAST(variant_get(v, $.a) AS a AS STRING), ,) WITHIN GROUP (ORDER BY CAST(variant_get(v, $.a) AS a AS STRING) ASC NULLS FIRST)#x]
 +- SubqueryAlias __auto_generated_subquery_name
    +- Union false, false
       :- Union false, false
@@ -737,7 +821,7 @@ Aggregate [listagg(cast(variant_get(v#x, $.a, VariantType, true, Some(America/Lo
 -- !query
 SELECT listagg(DISTINCT v:a::string, ',') WITHIN GROUP (ORDER BY v:a::string DESC) FROM (SELECT parse_json('{"a": "x"}') v UNION ALL SELECT parse_json('{"a": "y"}') UNION ALL SELECT parse_json('{"a": "x"}'))
 -- !query analysis
-Aggregate [listagg(distinct cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string), ,, cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string) DESC NULLS LAST, 0, 0) AS listagg(DISTINCT CAST(variant_get(v, $.a) AS a AS STRING), ,) WITHIN GROUP (ORDER BY CAST(variant_get(v, $.a) AS a AS STRING) DESC NULLS LAST)#x]
+Aggregate [listagg(distinct cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string), ,, cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string) DESC NULLS LAST, 0, 0, None, ...) AS listagg(DISTINCT CAST(variant_get(v, $.a) AS a AS STRING), ,) WITHIN GROUP (ORDER BY CAST(variant_get(v, $.a) AS a AS STRING) DESC NULLS LAST)#x]
 +- SubqueryAlias __auto_generated_subquery_name
    +- Union false, false
       :- Union false, false
@@ -752,7 +836,7 @@ Aggregate [listagg(distinct cast(variant_get(v#x, $.a, VariantType, true, Some(A
 -- !query
 SELECT listagg(DISTINCT v:a.b::string, ',') WITHIN GROUP (ORDER BY v:a.b::string) FROM (SELECT parse_json('{"a": {"b": "x"}}') v UNION ALL SELECT parse_json('{"a": {"b": "y"}}') UNION ALL SELECT parse_json('{"a": {"b": "x"}}'))
 -- !query analysis
-Aggregate [listagg(distinct cast(variant_get(v#x, $.a.b, VariantType, true, Some(America/Los_Angeles)) as string), ,, cast(variant_get(v#x, $.a.b, VariantType, true, Some(America/Los_Angeles)) as string) ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT CAST(variant_get(v, $.a.b) AS b AS STRING), ,) WITHIN GROUP (ORDER BY CAST(variant_get(v, $.a.b) AS b AS STRING) ASC NULLS FIRST)#x]
+Aggregate [listagg(distinct cast(variant_get(v#x, $.a.b, VariantType, true, Some(America/Los_Angeles)) as string), ,, cast(variant_get(v#x, $.a.b, VariantType, true, Some(America/Los_Angeles)) as string) ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT CAST(variant_get(v, $.a.b) AS b AS STRING), ,) WITHIN GROUP (ORDER BY CAST(variant_get(v, $.a.b) AS b AS STRING) ASC NULLS FIRST)#x]
 +- SubqueryAlias __auto_generated_subquery_name
    +- Union false, false
       :- Union false, false
@@ -767,7 +851,7 @@ Aggregate [listagg(distinct cast(variant_get(v#x, $.a.b, VariantType, true, Some
 -- !query
 SELECT grp, listagg(DISTINCT v:a::string, ',') WITHIN GROUP (ORDER BY v:a::string) FROM (SELECT 1 grp, parse_json('{"a": "x"}') v UNION ALL SELECT 1, parse_json('{"a": "y"}') UNION ALL SELECT 2, parse_json('{"a": "x"}') UNION ALL SELECT 2, parse_json('{"a": "x"}') UNION ALL SELECT 1, parse_json('{"a": "x"}')) GROUP BY grp
 -- !query analysis
-Aggregate [grp#x], [grp#x, listagg(distinct cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string), ,, cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string) ASC NULLS FIRST, 0, 0) AS listagg(DISTINCT CAST(variant_get(v, $.a) AS a AS STRING), ,) WITHIN GROUP (ORDER BY CAST(variant_get(v, $.a) AS a AS STRING) ASC NULLS FIRST)#x]
+Aggregate [grp#x], [grp#x, listagg(distinct cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string), ,, cast(variant_get(v#x, $.a, VariantType, true, Some(America/Los_Angeles)) as string) ASC NULLS FIRST, 0, 0, None, ...) AS listagg(DISTINCT CAST(variant_get(v, $.a) AS a AS STRING), ,) WITHIN GROUP (ORDER BY CAST(variant_get(v, $.a) AS a AS STRING) ASC NULLS FIRST)#x]
 +- SubqueryAlias __auto_generated_subquery_name
    +- Union false, false
       :- Union false, false

@@ -1474,6 +1474,16 @@ primaryExpression
     | col=primaryExpression COLON path=semiStructuredExtractionPath                            #semiStructuredExtract
     | LEFT_PAREN namedExpression (COMMA namedExpression)+ RIGHT_PAREN                          #rowConstructor
     | LEFT_PAREN query RIGHT_PAREN                                                             #subqueryExpression
+    | LISTAGG LEFT_PAREN setQuantifier? expr=expression
+        (COMMA delimiter=expression)?
+        (ON OVERFLOW onOverflow=(ERROR | TRUNCATE)
+          (truncIndicator=expression)?
+          ((WITH | WITHOUT) COUNT)?
+        )?
+      RIGHT_PAREN
+      (WITHIN GROUP LEFT_PAREN ORDER BY sortItem (COMMA sortItem)* RIGHT_PAREN)?
+      (FILTER LEFT_PAREN WHERE where=booleanExpression RIGHT_PAREN)?
+      (OVER windowSpec)?                                                                        #listagg
     | functionName LEFT_PAREN (setQuantifier? argument+=functionArgument
        (COMMA argument+=functionArgument)*)? RIGHT_PAREN
        (WITHIN GROUP LEFT_PAREN ORDER BY sortItem (COMMA sortItem)* RIGHT_PAREN)?
@@ -2154,6 +2164,7 @@ ansiNonReserved
     | CONDITION
     | CONTAINS
     | CONTINUE
+    | COUNT
     | COST
     | CURSOR
     | CUBE
@@ -2270,6 +2281,7 @@ ansiNonReserved
     | LIMIT
     | LINES
     | LIST
+    | LISTAGG
     | LOAD
     | LOCAL
     | LOCATION
@@ -2317,6 +2329,7 @@ ansiNonReserved
     | OUT
     | OUTPUTFORMAT
     | OVER
+    | OVERFLOW
     | OVERLAY
     | OVERWRITE
     | PARTITION
@@ -2570,6 +2583,7 @@ nonReserved
     | CONSTRAINT
     | CONTAINS
     | CONTINUE
+    | COUNT
     | COST
     | CREATE
     | CUBE
@@ -2712,6 +2726,7 @@ nonReserved
     | LIMIT
     | LINES
     | LIST
+    | LISTAGG
     | LOAD
     | LOCAL
     | LOCALTIME
@@ -2767,6 +2782,7 @@ nonReserved
     | OUTER
     | OUTPUTFORMAT
     | OVER
+    | OVERFLOW
     | OVERLAPS
     | OVERLAY
     | OVERWRITE

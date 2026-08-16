@@ -37,7 +37,8 @@ import org.apache.spark.sql.catalyst.analysis._
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry.FUNC_ALIAS
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogStorageFormat, ClusterBySpec}
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.expressions.aggregate.{AnyValue, First, Last}
+import org.apache.spark.sql.catalyst.expressions.aggregate.{
+  AnyValue, First, Last, ListAgg, ListAggOverflow}
 import org.apache.spark.sql.catalyst.expressions.json.JsonPathParser
 import org.apache.spark.sql.catalyst.expressions.json.PathInstruction.Named
 import org.apache.spark.sql.catalyst.parser.SqlBaseParser._
@@ -4109,6 +4110,50 @@ class AstBuilder extends DataTypeAstBuilder
   override def visitLast(ctx: LastContext): Expression = withOrigin(ctx) {
     val ignoreNullsExpr = ctx.IGNORE != null
     Last(expression(ctx.expression), ignoreNullsExpr).toAggregateExpression()
+  }
+
+  /**
+   * Create a [[ListAgg]] aggregate expression from ANSI T625 LISTAGG syntax.
+   *
+   * Handles:
+   *   LISTAGG(expr [, sep] [ON OVERFLOW {ERROR | TRUNCATE [ind] [{WITH|WITHOUT} COUNT]}])
+   *   [WITHIN GROUP (ORDER BY ...)] [FILTER (WHERE ...)] [OVER ...]
+   */
+  override def visitListagg(ctx: ListaggContext): Expression = withOrigin(ctx) {
+    val isDistinct = Option(ctx.setQuantifier()).exists(_.DISTINCT != null)
+    val expr = expression(ctx.expr)
+    val delimiter = Option(ctx.delimiter).map(expression).getOrElse(Literal(null))
+    val orderExprs = ctx.sortItem.asScala.map(visitSortItem).toSeq
+    val filter = Option(ctx.where).map(expression(_))
+
+    val defaultIndicator = Literal.create("...", StringType)
+    val (onOverflow, truncIndicator) = Option(ctx.onOverflow) match {
+      case scala.None =>
+        (ListAggOverflow.None, defaultIndicator)
+      case Some(tok) if tok.getType == SqlBaseParser.ERROR =>
+        (ListAggOverflow.Error, defaultIndicator)
+      case Some(_) => // TRUNCATE
+        val ind = Option(ctx.truncIndicator).map(expression).getOrElse(defaultIndicator)
+        val withCount = ctx.WITH != null
+        (ListAggOverflow.Truncate(withCount), ind)
+    }
+
+    val listAgg = ListAgg(
+      child = expr,
+      delimiter = delimiter,
+      orderExpressions = orderExprs,
+      onOverflow = onOverflow,
+      truncationIndicator = truncIndicator)
+
+    val func = listAgg.toAggregateExpression(isDistinct = isDistinct, filter = filter)
+
+    ctx.windowSpec match {
+      case spec: WindowRefContext =>
+        UnresolvedWindowExpression(func, visitWindowRef(spec))
+      case spec: WindowDefContext =>
+        WindowExpression(func, visitWindowDef(spec))
+      case _ => func
+    }
   }
 
   /**

@@ -1221,6 +1221,15 @@ private[sql] object QueryExecutionErrors extends QueryErrorsBase with ExecutionE
       new java.util.HashMap[String, String]())
   }
 
+  def listaggResultExceedsMaxLengthError(maxLength: Long, configKey: String): SparkException = {
+    new SparkException(
+      errorClass = "LISTAGG_RESULT_EXCEEDS_MAX_LENGTH",
+      messageParameters = Map(
+        "maxLength" -> maxLength.toString,
+        "config" -> configKey),
+      cause = null)
+  }
+
   def cannotAcquireMemoryForWindowAggregateError(
       requestedBytes: Long,
       receivedBytes: Long,

@@ -341,7 +341,7 @@ org.apache.spark.sql.catalyst.ExtendedAnalysisException
     "inputType" : "\"ARRAY<STRING>\"",
     "paramIndex" : "first",
     "requiredType" : "(\"STRING\" or \"BINARY\")",
-    "sqlExpr" : "\"listagg(c1, NULL)\""
+    "sqlExpr" : "\"listagg(c1, NULL, ...)\""
   },
   "queryContext" : [ {
     "objectType" : "",
@@ -365,7 +365,7 @@ org.apache.spark.sql.catalyst.ExtendedAnalysisException
   "messageParameters" : {
     "dataType" : "(\"BINARY\" or \"STRING\")",
     "functionName" : "`listagg`",
-    "sqlExpr" : "\"listagg(c1, , )\""
+    "sqlExpr" : "\"listagg(c1, , , ...)\""
   },
   "queryContext" : [ {
     "objectType" : "",
@@ -390,7 +390,7 @@ org.apache.spark.sql.catalyst.ExtendedAnalysisException
     "inputExpr" : "\"col1\"",
     "inputName" : "`delimiter`",
     "inputType" : "\"STRING\"",
-    "sqlExpr" : "\"listagg(col2, col1)\""
+    "sqlExpr" : "\"listagg(col2, col1, ...)\""
   },
   "queryContext" : [ {
     "objectType" : "",
@@ -424,7 +424,7 @@ org.apache.spark.sql.catalyst.ExtendedAnalysisException
   "errorClass" : "INVALID_WINDOW_SPEC_FOR_AGGREGATION_FUNC",
   "sqlState" : "42601",
   "messageParameters" : {
-    "aggFunc" : "\"listagg(col1, NULL, col1 ASC NULLS FIRST)\""
+    "aggFunc" : "\"listagg(col1, NULL, col1 ASC NULLS FIRST, ...)\""
   },
   "queryContext" : [ {
     "objectType" : "",
@@ -446,7 +446,7 @@ org.apache.spark.sql.catalyst.ExtendedAnalysisException
   "errorClass" : "INVALID_WINDOW_SPEC_FOR_AGGREGATION_FUNC",
   "sqlState" : "42601",
   "messageParameters" : {
-    "aggFunc" : "\"listagg(col1, NULL, col1 ASC NULLS FIRST)\""
+    "aggFunc" : "\"listagg(col1, NULL, col1 ASC NULLS FIRST, ...)\""
   },
   "queryContext" : [ {
     "objectType" : "",
@@ -563,6 +563,102 @@ org.apache.spark.sql.catalyst.ExtendedAnalysisException
     "inputType" : "\"TIMESTAMP\""
   }
 }
+
+
+-- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW ERROR) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query schema
+struct<listagg(col, ,  ON OVERFLOW ERROR) WITHIN GROUP (ORDER BY col ASC NULLS FIRST):string>
+-- !query output
+a, b, c
+
+
+-- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query schema
+struct<listagg(col, ,  ON OVERFLOW TRUNCATE ... WITHOUT COUNT) WITHIN GROUP (ORDER BY col ASC NULLS FIRST):string>
+-- !query output
+a, b, c
+
+
+-- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW TRUNCATE '...') WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query schema
+struct<listagg(col, ,  ON OVERFLOW TRUNCATE ... WITHOUT COUNT) WITHIN GROUP (ORDER BY col ASC NULLS FIRST):string>
+-- !query output
+a, b, c
+
+
+-- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW TRUNCATE '...' WITHOUT COUNT) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query schema
+struct<listagg(col, ,  ON OVERFLOW TRUNCATE ... WITHOUT COUNT) WITHIN GROUP (ORDER BY col ASC NULLS FIRST):string>
+-- !query output
+a, b, c
+
+
+-- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW TRUNCATE '...' WITH COUNT) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query schema
+struct<listagg(col, ,  ON OVERFLOW TRUNCATE ... WITH COUNT) WITHIN GROUP (ORDER BY col ASC NULLS FIRST):string>
+-- !query output
+a, b, c
+
+
+-- !query
+SELECT LISTAGG(col ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query schema
+struct<listagg(col, NULL ON OVERFLOW TRUNCATE ... WITHOUT COUNT) WITHIN GROUP (ORDER BY col ASC NULLS FIRST):string>
+-- !query output
+abc
+
+
+-- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW ERROR) WITHIN GROUP (ORDER BY col) FILTER (WHERE col != 'b') FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query schema
+struct<listagg(col, ,  ON OVERFLOW ERROR) WITHIN GROUP (ORDER BY col ASC NULLS FIRST) FILTER (WHERE (NOT (col = b))):string>
+-- !query output
+a, c
+
+
+-- !query
+SET spark.sql.listagg.maxResultLength=5
+-- !query schema
+struct<key:string,value:string>
+-- !query output
+spark.sql.listagg.maxResultLength	5
+
+
+-- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW TRUNCATE '...') WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c'), ('d') AS t(col)
+-- !query schema
+struct<listagg(col, ,  ON OVERFLOW TRUNCATE ... WITHOUT COUNT) WITHIN GROUP (ORDER BY col ASC NULLS FIRST):string>
+-- !query output
+a,...
+
+
+-- !query
+SELECT LISTAGG(col, ', ' ON OVERFLOW ERROR) WITHIN GROUP (ORDER BY col) FROM VALUES ('a'), ('b'), ('c') AS t(col)
+-- !query schema
+struct<>
+-- !query output
+org.apache.spark.SparkException
+{
+  "errorClass" : "LISTAGG_RESULT_EXCEEDS_MAX_LENGTH",
+  "sqlState" : "22001",
+  "messageParameters" : {
+    "config" : "spark.sql.listagg.maxResultLength",
+    "maxLength" : "5"
+  }
+}
+
+
+-- !query
+SET spark.sql.listagg.maxResultLength=0
+-- !query schema
+struct<key:string,value:string>
+-- !query output
+spark.sql.listagg.maxResultLength	0
 
 
 -- !query

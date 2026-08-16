@@ -5683,6 +5683,13 @@
     ],
     "sqlState" : "0A000"
   },
+  "LISTAGG_RESULT_EXCEEDS_MAX_LENGTH" : {
+    "message" : [
+      "LISTAGG result exceeds the maximum allowed length of <maxLength> bytes.",
+      "Use ON OVERFLOW TRUNCATE to silently truncate instead, or increase <config>."
+    ],
+    "sqlState" : "22001"
+  },
   "LOAD_DATA_PATH_NOT_EXISTS" : {
     "message" : [
       "LOAD DATA input path does not exist: <path>."

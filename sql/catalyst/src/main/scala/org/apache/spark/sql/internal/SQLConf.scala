@@ -8405,6 +8405,18 @@ object SQLConf {
       .booleanConf
       .createWithDefault(true)
 
+  val LISTAGG_MAX_RESULT_LENGTH =
+    buildConf("spark.sql.listagg.maxResultLength")
+      .doc("Maximum length in bytes of the result string produced by LISTAGG. When set to a " +
+        "positive value and the result exceeds this limit, LISTAGG raises an error if ON " +
+        "OVERFLOW ERROR is specified, or silently truncates if ON OVERFLOW TRUNCATE is " +
+        "specified. A value of 0 (the default) disables the limit and the ON OVERFLOW clause " +
+        "has no effect.")
+      .version("4.4.0")
+      .longConf
+      .checkValue(_ >= 0, "spark.sql.listagg.maxResultLength must be non-negative")
+      .createWithDefault(0L)
+
   /**
    * Holds information about keys that have been deprecated.
    *
@@ -9825,6 +9837,8 @@ class SQLConf extends Serializable with Logging with SqlApiConf {
   def isTimeTypeEnabled: Boolean = getConf(SQLConf.TIME_TYPE_ENABLED)
 
   def listaggAllowDistinctCastWithOrder: Boolean = getConf(LISTAGG_ALLOW_DISTINCT_CAST_WITH_ORDER)
+
+  def listaggMaxResultLength: Long = getConf(LISTAGG_MAX_RESULT_LENGTH)
 
   /** ********************** SQLConf functionality methods ************ */
 
