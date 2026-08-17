@@ -488,6 +488,7 @@ Below is a list of all the keywords in Spark SQL.
 |CONTAINS|non-reserved|non-reserved|non-reserved|
 |CONTINUE|non-reserved|non-reserved|non-reserved|
 |COST|non-reserved|non-reserved|non-reserved|
+|COUNT|non-reserved|non-reserved|reserved|
 |CREATE|reserved|non-reserved|reserved|
 |CROSS|reserved|strict-non-reserved|reserved|
 |CUBE|non-reserved|non-reserved|reserved|
@@ -636,6 +637,7 @@ Below is a list of all the keywords in Spark SQL.
 |LIMIT|non-reserved|non-reserved|non-reserved|
 |LINES|non-reserved|non-reserved|non-reserved|
 |LIST|non-reserved|non-reserved|non-reserved|
+|LISTAGG|non-reserved|non-reserved|reserved|
 |LOAD|non-reserved|non-reserved|non-reserved|
 |LOCAL|non-reserved|non-reserved|reserved|
 |LOCALTIME|reserved|non-reserved|reserved|
@@ -696,6 +698,7 @@ Below is a list of all the keywords in Spark SQL.
 |OVER|non-reserved|non-reserved|non-reserved|
 |OVERLAPS|reserved|non-reserved|reserved|
 |OVERLAY|non-reserved|non-reserved|non-reserved|
+|OVERFLOW|non-reserved|non-reserved|non-reserved|
 |OVERWRITE|non-reserved|non-reserved|non-reserved|
 |PARTITION|non-reserved|non-reserved|reserved|
 |PARTITIONED|non-reserved|non-reserved|non-reserved|

@@ -81,6 +81,7 @@ CONSTRAINT	true
 CONTAINS	false
 CONTINUE	false
 COST	false
+COUNT	false
 CREATE	true
 CROSS	true
 CUBE	false
@@ -229,6 +230,7 @@ LIKE	false
 LIMIT	false
 LINES	false
 LIST	false
+LISTAGG	false
 LOAD	false
 LOCAL	false
 LOCALTIME	true
@@ -287,6 +289,7 @@ OUT	false
 OUTER	true
 OUTPUTFORMAT	false
 OVER	false
+OVERFLOW	false
 OVERLAPS	true
 OVERLAY	false
 OVERWRITE	false

@@ -587,12 +587,7 @@ object ListAggOverflow {
 // scalastyle:off line.size.limit
 @ExpressionDescription(
   usage = """
-    _FUNC_(expr[, delimiter] [ON OVERFLOW {ERROR | TRUNCATE [indicator] [{WITH | WITHOUT} COUNT]}])
-    [ WITHIN GROUP (ORDER BY key [ASC | DESC] [,...])] - Returns the concatenation of non-NULL
-    input values, separated by the delimiter ordered by key. If all values are NULL, NULL is
-    returned. ON OVERFLOW controls the behaviour when the result exceeds the length configured by
-    spark.sql.listagg.maxResultLength: ERROR raises an error; TRUNCATE clips and appends the
-    indicator (default "...") and optionally the count of omitted values.
+    _FUNC_(expr[, delimiter] [ON OVERFLOW {ERROR | TRUNCATE [indicator] [{WITH | WITHOUT} COUNT]}] [WITHIN GROUP (ORDER BY key [ASC | DESC] [...])]) - Returns the concatenation of non-NULL input values, separated by the delimiter ordered by key. If all values are NULL, NULL is returned. ON OVERFLOW controls the behaviour when the result exceeds the length configured by spark.sql.listagg.maxResultLength: ERROR raises an error; TRUNCATE clips and appends the indicator (default "...") and optionally the count of omitted values.
     """,
   arguments = """
     Arguments:

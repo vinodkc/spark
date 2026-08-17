@@ -8413,6 +8413,7 @@ object SQLConf {
         "specified. A value of 0 (the default) disables the limit and the ON OVERFLOW clause " +
         "has no effect.")
       .version("4.4.0")
+      .withBindingPolicy(ConfigBindingPolicy.NOT_APPLICABLE)
       .longConf
       .checkValue(_ >= 0, "spark.sql.listagg.maxResultLength must be non-negative")
       .createWithDefault(0L)
