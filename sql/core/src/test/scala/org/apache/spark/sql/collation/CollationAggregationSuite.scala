@@ -259,4 +259,158 @@ class CollationAggregationSuite
         Seq(Row(Seq("FOO", "bar", "foo"))))
     }
   }
+
+  // collect_union dedups the *elements* of its array input across rows. Like collect_set it is
+  // non-deterministic in which representative of a collation-equal group it keeps, so tests
+  // assert on a collation-collapsed form (lower(...)) rather than a fixed case. Arrays are built
+  // with array(CAST(... AS STRING COLLATE ...)) so the element type carries the collation.
+
+  test("collect_union dedups collation-equal elements (UTF8_LCASE)") {
+    val df = spark.sql(
+      "SELECT array(CAST(c AS STRING COLLATE UTF8_LCASE)) AS arr " +
+        "FROM VALUES ('foo'), ('FOO'), ('FoO'), ('bar'), ('BAR') AS t(c)")
+
+    // 'foo'/'FOO'/'FoO' collapse to one group and 'bar'/'BAR' to another under UTF8_LCASE.
+    checkAnswer(df.select(size(collect_union($"arr"))), Seq(Row(2)))
+    checkAnswer(
+      df.select(array_sort(transform(collect_union($"arr"), x => lower(x)))),
+      Seq(Row(Seq("bar", "foo"))))
+  }
+
+  test("collect_union dedups collation-equal elements (UNICODE_CI)") {
+    val df = spark.sql(
+      "SELECT array(CAST(c AS STRING COLLATE UNICODE_CI)) AS arr " +
+        "FROM VALUES ('cafe'), ('CAFE'), ('Cafe'), ('bar') AS t(c)")
+
+    checkAnswer(df.select(size(collect_union($"arr"))), Seq(Row(2)))
+    checkAnswer(
+      df.select(array_sort(transform(collect_union($"arr"), x => lower(x)))),
+      Seq(Row(Seq("bar", "cafe"))))
+  }
+
+  test("collect_union is collation-aware for collated strings nested in struct/array elements") {
+    // Element is a struct carrying a collated string: dedup on the struct's collation key.
+    val structDf = spark.sql(
+      "SELECT array(named_struct('s', CAST(c AS STRING COLLATE UTF8_LCASE))) AS arr " +
+        "FROM VALUES ('foo'), ('FOO'), ('bar') AS t(c)")
+    checkAnswer(structDf.select(size(collect_union($"arr"))), Seq(Row(2)))
+    checkAnswer(
+      structDf.select(array_sort(transform(collect_union($"arr"), x => lower(x("s"))))),
+      Seq(Row(Seq("bar", "foo"))))
+
+    // Element is itself an array of collated strings: dedup on the element array's collation key.
+    val arrDf = spark.sql(
+      "SELECT array(array(CAST(c AS STRING COLLATE UTF8_LCASE))) AS arr " +
+        "FROM VALUES ('foo'), ('FOO'), ('bar') AS t(c)")
+    checkAnswer(arrDf.select(size(collect_union($"arr"))), Seq(Row(2)))
+    checkAnswer(
+      arrDf.select(array_sort(transform(collect_union($"arr"), x => lower(x(0))))),
+      Seq(Row(Seq("bar", "foo"))))
+  }
+
+  test("collect_union collation and float normalization compose for nested structs") {
+    // (foo, 0.0) and (FOO, -0.0) dedup only if BOTH the collation key and float normalization
+    // fire on the same nested key (size 2, not 3).
+    val df = spark.sql(
+      "SELECT array(named_struct('s', CAST(c AS STRING COLLATE UTF8_LCASE), 'd', d)) AS arr " +
+        "FROM VALUES ('foo', 0.0D), ('FOO', -0.0D), ('bar', 1.0D) AS t(c, d)")
+
+    checkAnswer(df.select(size(collect_union($"arr"))), Seq(Row(2)))
+    checkAnswer(
+      df.select(array_sort(transform(collect_union($"arr"), x => lower(x("s"))))),
+      Seq(Row(Seq("bar", "foo"))))
+  }
+
+  test("collect_union IGNORE NULLS (default) drops null elements while deduping collated values") {
+    val df = spark.sql(
+      "SELECT array(CAST(c AS STRING COLLATE UTF8_LCASE)) AS arr " +
+        "FROM VALUES ('foo'), ('FOO'), (CAST(NULL AS STRING)), ('bar') AS t(c)")
+
+    // Default IGNORE NULLS: the null element is dropped, and 'foo'/'FOO' still collapse under
+    // UTF8_LCASE, so the set is {<foo group>, <bar group>} -> size 2 with no null element.
+    checkAnswer(df.select(size(collect_union($"arr"))), Seq(Row(2)))
+    checkAnswer(
+      df.select(array_sort(transform(collect_union($"arr"), x => lower(x)))),
+      Seq(Row(Seq("bar", "foo"))))
+  }
+
+  test("collect_union RESPECT NULLS keeps one null alongside collation-deduped values") {
+    withTempView("collect_union_respect_nulls") {
+      spark.sql(
+        "SELECT array(CAST(c AS STRING COLLATE UTF8_LCASE)) AS arr " +
+          "FROM VALUES ('foo'), ('FOO'), (CAST(NULL AS STRING)), ('bar') AS t(c)")
+        .createOrReplaceTempView("collect_union_respect_nulls")
+
+      // RESPECT NULLS keeps a single null; 'foo'/'FOO' still collapse under UTF8_LCASE, so the
+      // set is {null, <foo group>, <bar group>} -> size 3. sort_array orders null first.
+      checkAnswer(
+        sql("SELECT size(collect_union(arr) RESPECT NULLS) FROM collect_union_respect_nulls"),
+        Seq(Row(3)))
+      checkAnswer(
+        sql("SELECT sort_array(transform(collect_union(arr) RESPECT NULLS, x -> lower(x))) " +
+          "FROM collect_union_respect_nulls"),
+        Seq(Row(Seq(null, "bar", "foo"))))
+    }
+  }
+
+  test("collect_union still rejects maps even when they carry collated strings") {
+    // The collation relaxation must not open the map gate: a HashSet cannot dedup maps, so an
+    // array whose element is a map with a collated-string key must still fail checkInputDataTypes
+    // with UNSUPPORTED_INPUT_TYPE.
+    val collatedMap = spark.sql(
+      "SELECT array(map(CAST(k AS STRING COLLATE UTF8_LCASE), v)) AS arr " +
+        "FROM VALUES ('a', 1), ('A', 2) AS t(k, v)")
+    checkError(
+      exception = intercept[AnalysisException](collatedMap.select(collect_union(col("arr")))),
+      condition = "DATATYPE_MISMATCH.UNSUPPORTED_INPUT_TYPE",
+      parameters = Map(
+        "functionName" -> "`collect_union`",
+        "dataType" -> "\"MAP\"",
+        "sqlExpr" -> "\"collect_union(arr)\""),
+      context = ExpectedContext(
+        fragment = "collect_union", callSitePattern = getCurrentClassCallSitePattern))
+
+    // A map nested alongside a collated string in a struct element is still rejected:
+    // existsRecursively finds the MapType before the collation-key path is ever considered.
+    val nestedMap = spark.sql(
+      "SELECT array(named_struct('s', CAST(k AS STRING COLLATE UTF8_LCASE), 'm', map(k, v))) " +
+        "AS arr FROM VALUES ('a', 1), ('A', 2) AS t(k, v)")
+    checkError(
+      exception = intercept[AnalysisException](nestedMap.select(collect_union(col("arr")))),
+      condition = "DATATYPE_MISMATCH.UNSUPPORTED_INPUT_TYPE",
+      parameters = Map(
+        "functionName" -> "`collect_union`",
+        "dataType" -> "\"MAP\"",
+        "sqlExpr" -> "\"collect_union(arr)\""),
+      context = ExpectedContext(
+        fragment = "collect_union", callSitePattern = getCurrentClassCallSitePattern))
+  }
+
+  test("collect_union collation-aware dedup survives the merge path across partitions") {
+    Seq("UTF8_LCASE", "UNICODE_CI").foreach { collation =>
+      withSQLConf(SQLConf.SHUFFLE_PARTITIONS.key -> "8") {
+        val values = (0 until 200).map(i => if (i % 2 == 0) "foo" else "FOO")
+        val df = values.toDF("c")
+          .select(array(col("c").cast(s"string collate $collation")).as("arr"))
+          .repartition(8)
+
+        // All 200 elements are collation-equal, so after partial aggregation on 8 partitions and
+        // the final merge (serialize/deserialize + union), the set has a single element.
+        val result = df.agg(collect_union(col("arr")).as("s"))
+        checkAnswer(result.select(size(col("s"))), Seq(Row(1)))
+        checkAnswer(result.select(transform(col("s"), x => lower(x))), Seq(Row(Seq("foo"))))
+      }
+    }
+  }
+
+  test("collect_union on UTF8_BINARY elements is unchanged (case-sensitive)") {
+    val df = spark.sql(
+      "SELECT array(c) AS arr FROM VALUES ('foo'), ('FOO'), ('foo'), ('bar') AS t(c)")
+
+    // Default UTF8_BINARY collation is case-sensitive: 'foo' and 'FOO' stay distinct.
+    checkAnswer(df.select(size(collect_union($"arr"))), Seq(Row(3)))
+    checkAnswer(
+      df.select(array_sort(collect_union($"arr"))),
+      Seq(Row(Seq("FOO", "bar", "foo"))))
+  }
 }

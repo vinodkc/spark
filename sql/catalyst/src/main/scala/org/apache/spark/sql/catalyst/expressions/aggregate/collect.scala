@@ -456,13 +456,35 @@ case class CollectUnion(
     case other => other
   }
 
+  // Non-binary collated elements (a collated string, or one nested in a struct/array) cannot
+  // dedup on the raw value's binary form: e.g. 'foo' and 'FOO' are equal under UTF8_LCASE but
+  // binary distinct. For those we store a wrapper in the HashSet keyed on a collation-aware key
+  // while keeping the original first-seen value for output. Mirrors CollectSet, keyed on the
+  // array element type since collect_union dedups the array's elements.
+  @transient private lazy val needsCollationKey: Boolean =
+    !UnsafeRowUtils.isBinaryStable(elementType)
+
+  // Projects an element to its collation- and float-normalized dedup key bytes. injectCollationKey
+  // handles collated strings nested at any depth; NormalizeFloatingNumbers folds them in too.
+  @transient private lazy val collationKeyBytes: Any => Array[Byte] = {
+    val ref = BoundReference(0, elementType, nullable = true)
+    val proj = UnsafeProjection.create(
+      Seq(CollationKey.injectCollationKey(NormalizeFloatingNumbers.normalize(ref))))
+    (value: Any) => proj(InternalRow(value)).getBytes
+  }
+
   @transient private lazy val complexNormalizer: Any => Any = {
     val ref = BoundReference(0, elementType, nullable = true)
     val proj = UnsafeProjection.create(NormalizeFloatingNumbers.normalize(ref))
     (value: Any) => InternalRow.copyValue(proj(InternalRow(value)).get(0, elementType))
   }
 
-  override def convertToBufferElement(value: Any): Any = elementType match {
+  override def convertToBufferElement(value: Any): Any = if (needsCollationKey) {
+    // Store the float-normalized element (not the raw one) so the emitted representative is
+    // canonical, matching the complex path below. normalize is a no-op for pure collated strings,
+    // so this only affects nested floats. The dedup key already folds in the same normalization.
+    new CollationKeyedElement(collationKeyBytes(value), complexNormalizer(value))
+  } else elementType match {
     // See CollectSet.convertToBufferElement for why binary/float/double are keyed specially.
     case BinaryType => UnsafeArrayData.fromPrimitiveArray(value.asInstanceOf[Array[Byte]])
     case DoubleType =>
@@ -510,21 +532,49 @@ case class CollectUnion(
           case null => null
           case v => java.lang.Float.intBitsToFloat(v.asInstanceOf[Int])
         }.toArray[Any]
+      case _ if needsCollationKey =>
+        buffer.iterator.map {
+          case null => null
+          case v => v.asInstanceOf[CollationKeyedElement].value
+        }.toArray[Any]
       case _ => buffer.toArray
     }
     new GenericArrayData(array)
   }
 
+  // For the collation-key case the buffer holds wrappers, so serialize the original values (typed
+  // as bufferElementType) and re-wrap on deserialize. Recomputing the key on deserialize keeps
+  // post-merge dedup collation-aware. Binary-stable inputs use the base implementations unchanged.
+  override def serialize(obj: mutable.HashSet[Any]): Array[Byte] = if (!needsCollationKey) {
+    super.serialize(obj)
+  } else {
+    val values = obj.iterator.map {
+      case null => null
+      case v => v.asInstanceOf[CollationKeyedElement].value
+    }
+    val array = new GenericArrayData(values.toArray)
+    projection.apply(InternalRow.apply(array)).getBytes()
+  }
+
+  override def deserialize(bytes: Array[Byte]): mutable.HashSet[Any] = if (!needsCollationKey) {
+    super.deserialize(bytes)
+  } else {
+    val buffer = createAggregationBuffer()
+    row.pointTo(bytes, bytes.length)
+    row.getArray(0).foreach(bufferElementType, (_, x: Any) =>
+      buffer += (if (x == null) null else convertToBufferElement(x)))
+    buffer
+  }
+
   override def checkInputDataTypes(): TypeCheckResult = child.dataType match {
-    case ArrayType(et, _)
-        if !et.existsRecursively(_.isInstanceOf[MapType]) && UnsafeRowUtils.isBinaryStable(et) =>
+    case ArrayType(et, _) if !et.existsRecursively(_.isInstanceOf[MapType]) =>
       TypeCheckResult.TypeCheckSuccess
     case ArrayType(_, _) =>
       DataTypeMismatch(
         errorSubClass = "UNSUPPORTED_INPUT_TYPE",
         messageParameters = Map(
           "functionName" -> toSQLId(prettyName),
-          "dataType" -> (s"${toSQLType(MapType)} " + "or \"COLLATED STRING\"")
+          "dataType" -> toSQLType(MapType)
         )
       )
     case _ =>
