@@ -178,41 +178,34 @@ case class CollectList(
 }
 
 /**
- * Collect a set of unique elements.
+ * A base class for the collect_set / collect_union aggregate functions, which both deduplicate
+ * their inputs in a `mutable.HashSet[Any]`. The dedup machinery is identical; the only difference
+ * is the type of the values stored in the set -- collect_set stores the whole child value, while
+ * collect_union stores each element of its array-typed child. Subclasses supply that type via
+ * [[collectedType]] and provide their own `update` / `dataType` / `checkInputDataTypes`.
  *
- * @param ignoreNulls when true (IGNORE NULLS), null values are excluded from the result array.
- *                    When false (RESPECT NULLS), null values are included in the result array.
+ * Keying is collation-aware: non-binary collated values (a collated string, or one nested in a
+ * struct/array) cannot dedup on the raw value's binary form -- e.g. 'foo' and 'FOO' are equal
+ * under UTF8_LCASE but binary distinct. For those we store a [[CollationKeyedElement]] wrapper in
+ * the set, keyed on a collation-aware key, while keeping the original first-seen value for output.
+ * Binary-stable inputs stay on the fast path with zero overhead.
  */
-@ExpressionDescription(
-  usage = "_FUNC_(expr) - Collects and returns a set of unique elements.",
-  arguments = """
-    Arguments:
-      * expr - An expression of any type whose values are collected into a set.
-  """,
-  examples = """
-    Examples:
-      > SELECT _FUNC_(col) FROM VALUES (1), (2), (1) AS tab(col);
-       [1,2]
-  """,
-  note = """
-    The function is non-deterministic because the order of collected results depends
-    on the order of the rows which may be non-deterministic after a shuffle.
-  """,
-  group = "agg_funcs",
-  since = "2.0.0")
-case class CollectSet(
-    child: Expression,
-    mutableAggBufferOffset: Int = 0,
-    inputAggBufferOffset: Int = 0,
-    ignoreNulls: Boolean = true)
-  extends Collect[mutable.HashSet[Any]] with QueryErrorsBase with UnaryLike[Expression] {
+abstract class CollectHashSet extends Collect[mutable.HashSet[Any]] {
 
-  def this(child: Expression) = this(child, 0, 0, true)
+  def ignoreNulls: Boolean
 
-  // Buffer can contain nulls when ignoreNulls is false (RESPECT NULLS)
+  /**
+   * Type of the values stored in the set: `child.dataType` for collect_set, the array element
+   * type for collect_union. All buffer keying and (de)serialization derive from this.
+   */
+  protected def collectedType: DataType
+
+  override def createAggregationBuffer(): mutable.HashSet[Any] = mutable.HashSet.empty
+
+  // Buffer can contain nulls when ignoreNulls is false (RESPECT NULLS).
   override protected def bufferContainsNull: Boolean = !ignoreNulls
 
-  override lazy val bufferElementType = child.dataType match {
+  override lazy val bufferElementType: DataType = collectedType match {
     case BinaryType => ArrayType(ByteType)
     // Float/double are keyed by their bit pattern (see convertToBufferElement), so the
     // buffer holds the integral bits; eval() converts them back to float/double.
@@ -221,39 +214,22 @@ case class CollectSet(
     case other => other
   }
 
-  override def update(
-      buffer: mutable.HashSet[Any],
-      input: InternalRow): mutable.HashSet[Any] = {
-    val value = child.eval(input)
-    if (value != null) {
-      buffer += convertToBufferElement(value)
-    } else if (!ignoreNulls) {
-      // RESPECT NULLS: preserve null value in result
-      buffer += null
-    }
-    buffer
-  }
-
-  // Non-binary collated inputs (a collated string, or one nested in a struct/array) cannot dedup
-  // on the raw value's binary form: e.g. 'foo' and 'FOO' are equal under UTF8_LCASE but binary
-  // distinct. For those we store a wrapper in the HashSet keyed on a collation-aware key while
-  // keeping the original first-seen value for output. Binary-stable inputs stay on the fast path.
   @transient private lazy val needsCollationKey: Boolean =
-    !UnsafeRowUtils.isBinaryStable(child.dataType)
+    !UnsafeRowUtils.isBinaryStable(collectedType)
 
   // Projects a value to its collation- and float-normalized dedup key bytes. injectCollationKey
   // handles collated strings nested at any depth; NormalizeFloatingNumbers folds them in too.
   @transient private lazy val collationKeyBytes: Any => Array[Byte] = {
-    val ref = BoundReference(0, child.dataType, nullable = true)
+    val ref = BoundReference(0, collectedType, nullable = true)
     val proj = UnsafeProjection.create(
       Seq(CollationKey.injectCollationKey(NormalizeFloatingNumbers.normalize(ref))))
     (value: Any) => proj(InternalRow(value)).getBytes
   }
 
   @transient private lazy val complexNormalizer: Any => Any = {
-    val ref = BoundReference(0, child.dataType, nullable = true)
+    val ref = BoundReference(0, collectedType, nullable = true)
     val proj = UnsafeProjection.create(NormalizeFloatingNumbers.normalize(ref))
-    (value: Any) => InternalRow.copyValue(proj(InternalRow(value)).get(0, child.dataType))
+    (value: Any) => InternalRow.copyValue(proj(InternalRow(value)).get(0, collectedType))
   }
 
   override def convertToBufferElement(value: Any): Any = if (needsCollationKey) {
@@ -262,11 +238,10 @@ case class CollectSet(
     // no-op for pure collated strings, so this only affects nested floats. The dedup key already
     // folds in the same normalization.
     new CollationKeyedElement(collationKeyBytes(value), complexNormalizer(value))
-  } else child.dataType match {
+  } else collectedType match {
     /*
-     * collect_set() of BinaryType should not return duplicate elements,
-     * Java byte arrays use referential equality and identity hash codes
-     * so we need to use a different catalyst value for arrays
+     * BinaryType values should not produce duplicate elements. Java byte arrays use referential
+     * equality and identity hash codes, so we key on a catalyst value for the array instead.
      */
     case BinaryType => UnsafeArrayData.fromPrimitiveArray(value.asInstanceOf[Array[Byte]])
     // mutable.HashSet[Any] compares boxed Double/Float with IEEE equality, where NaN != NaN,
@@ -284,7 +259,7 @@ case class CollectSet(
   }
 
   override def eval(buffer: mutable.HashSet[Any]): Any = {
-    val array = child.dataType match {
+    val array = collectedType match {
       case BinaryType =>
         buffer.iterator.map {
           case null => null
@@ -333,6 +308,55 @@ case class CollectSet(
       buffer += (if (x == null) null else convertToBufferElement(x)))
     buffer
   }
+}
+
+/**
+ * Collect a set of unique elements.
+ *
+ * @param ignoreNulls when true (IGNORE NULLS), null values are excluded from the result array.
+ *                    When false (RESPECT NULLS), null values are included in the result array.
+ */
+@ExpressionDescription(
+  usage = "_FUNC_(expr) - Collects and returns a set of unique elements.",
+  arguments = """
+    Arguments:
+      * expr - An expression of any type whose values are collected into a set.
+  """,
+  examples = """
+    Examples:
+      > SELECT _FUNC_(col) FROM VALUES (1), (2), (1) AS tab(col);
+       [1,2]
+  """,
+  note = """
+    The function is non-deterministic because the order of collected results depends
+    on the order of the rows which may be non-deterministic after a shuffle.
+  """,
+  group = "agg_funcs",
+  since = "2.0.0")
+case class CollectSet(
+    child: Expression,
+    mutableAggBufferOffset: Int = 0,
+    inputAggBufferOffset: Int = 0,
+    ignoreNulls: Boolean = true)
+  extends CollectHashSet with QueryErrorsBase with UnaryLike[Expression] {
+
+  def this(child: Expression) = this(child, 0, 0, true)
+
+  // collect_set deduplicates the whole child value.
+  override protected def collectedType: DataType = child.dataType
+
+  override def update(
+      buffer: mutable.HashSet[Any],
+      input: InternalRow): mutable.HashSet[Any] = {
+    val value = child.eval(input)
+    if (value != null) {
+      buffer += convertToBufferElement(value)
+    } else if (!ignoreNulls) {
+      // RESPECT NULLS: preserve null value in result
+      buffer += null
+    }
+    buffer
+  }
 
   override def checkInputDataTypes(): TypeCheckResult = {
     if (!child.dataType.existsRecursively(_.isInstanceOf[MapType])) {
@@ -356,8 +380,6 @@ case class CollectSet(
 
   override def prettyName: String = "collect_set"
 
-  override def createAggregationBuffer(): mutable.HashSet[Any] = mutable.HashSet.empty
-
   override def toString: String = {
     val ignoreNullsStr = if (ignoreNulls) "" else " respect nulls"
     s"$prettyName($child)$ignoreNullsStr"
@@ -374,9 +396,10 @@ case class CollectSet(
 }
 
 /**
- * A collect_set buffer element for non-binary collated inputs. Equality and hashing use the
- * collation-aware key bytes, so collation-equal values (e.g. 'foo' and 'FOO' under UTF8_LCASE)
- * dedup to a single entry, while [[value]] retains the original first-seen value for output.
+ * A [[CollectHashSet]] buffer element for non-binary collated inputs (used by collect_set and
+ * collect_union). Equality and hashing use the collation-aware key bytes, so collation-equal
+ * values (e.g. 'foo' and 'FOO' under UTF8_LCASE) dedup to a single entry, while [[value]] retains
+ * the original first-seen value for output.
  */
 private[aggregate] class CollationKeyedElement(val key: Array[Byte], val value: Any) {
   override def hashCode(): Int = java.util.Arrays.hashCode(key)
@@ -427,7 +450,7 @@ case class CollectUnion(
     mutableAggBufferOffset: Int = 0,
     inputAggBufferOffset: Int = 0,
     ignoreNulls: Boolean = true)
-  extends Collect[mutable.HashSet[Any]] with QueryErrorsBase with UnaryLike[Expression] {
+  extends CollectHashSet with QueryErrorsBase with UnaryLike[Expression] {
 
   def this(child: Expression) = this(child, 0, 0, true)
 
@@ -437,39 +460,11 @@ case class CollectUnion(
     case other => other
   }
 
-  // The result array contains a null only when null elements are respected (RESPECT NULLS).
-  override protected def bufferContainsNull: Boolean = !ignoreNulls
+  // collect_union deduplicates the elements of its array-typed child.
+  override protected def collectedType: DataType = elementType
 
   // Result is array<elementType>; containsNull is true iff null elements are kept.
   override def dataType: DataType = ArrayType(elementType, containsNull = bufferContainsNull)
-
-  // The buffer stores distinct elements. Mirror CollectSet's keying so equality is correct
-  // for float/double (bit pattern) and binary (byte array) element types.
-  override lazy val bufferElementType: DataType = elementType match {
-    case BinaryType => ArrayType(ByteType)
-    case DoubleType => LongType
-    case FloatType => IntegerType
-    case other => other
-  }
-
-  @transient private lazy val complexNormalizer: Any => Any = {
-    val ref = BoundReference(0, elementType, nullable = true)
-    val proj = UnsafeProjection.create(NormalizeFloatingNumbers.normalize(ref))
-    (value: Any) => InternalRow.copyValue(proj(InternalRow(value)).get(0, elementType))
-  }
-
-  override def convertToBufferElement(value: Any): Any = elementType match {
-    // See CollectSet.convertToBufferElement for why binary/float/double are keyed specially.
-    case BinaryType => UnsafeArrayData.fromPrimitiveArray(value.asInstanceOf[Array[Byte]])
-    case DoubleType =>
-      java.lang.Double.doubleToLongBits(
-        NormalizeFloatingNumbers.DOUBLE_NORMALIZER(value).asInstanceOf[Double])
-    case FloatType =>
-      java.lang.Float.floatToIntBits(
-        NormalizeFloatingNumbers.FLOAT_NORMALIZER(value).asInstanceOf[Float])
-    case dt if NormalizeFloatingNumbers.needNormalize(dt) => complexNormalizer(value)
-    case _ => InternalRow.copyValue(value)
-  }
 
   // Iterate the input array and add each element to the set. NULL input arrays are skipped;
   // a NULL element is dropped when ignoreNulls (IGNORE NULLS) and kept otherwise (RESPECT
@@ -489,38 +484,15 @@ case class CollectUnion(
     buffer
   }
 
-  override def eval(buffer: mutable.HashSet[Any]): Any = {
-    val array = elementType match {
-      case BinaryType =>
-        buffer.iterator.map {
-          case null => null
-          case v => v.asInstanceOf[ArrayData].toByteArray()
-        }.toArray[Any]
-      case DoubleType =>
-        buffer.iterator.map {
-          case null => null
-          case v => java.lang.Double.longBitsToDouble(v.asInstanceOf[Long])
-        }.toArray[Any]
-      case FloatType =>
-        buffer.iterator.map {
-          case null => null
-          case v => java.lang.Float.intBitsToFloat(v.asInstanceOf[Int])
-        }.toArray[Any]
-      case _ => buffer.toArray
-    }
-    new GenericArrayData(array)
-  }
-
   override def checkInputDataTypes(): TypeCheckResult = child.dataType match {
-    case ArrayType(et, _)
-        if !et.existsRecursively(_.isInstanceOf[MapType]) && UnsafeRowUtils.isBinaryStable(et) =>
+    case ArrayType(et, _) if !et.existsRecursively(_.isInstanceOf[MapType]) =>
       TypeCheckResult.TypeCheckSuccess
     case ArrayType(_, _) =>
       DataTypeMismatch(
         errorSubClass = "UNSUPPORTED_INPUT_TYPE",
         messageParameters = Map(
           "functionName" -> toSQLId(prettyName),
-          "dataType" -> (s"${toSQLType(MapType)} " + "or \"COLLATED STRING\"")
+          "dataType" -> toSQLType(MapType)
         )
       )
     case _ =>
@@ -542,8 +514,6 @@ case class CollectUnion(
     copy(inputAggBufferOffset = newInputAggBufferOffset)
 
   override def prettyName: String = "collect_union"
-
-  override def createAggregationBuffer(): mutable.HashSet[Any] = mutable.HashSet.empty
 
   override def toString: String = {
     val ignoreNullsStr = if (ignoreNulls) "" else " respect nulls"
