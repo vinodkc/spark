@@ -105,6 +105,10 @@ case class UserDefinedGenerator(
     children: Seq[Expression])
   extends Generator with CodegenFallback {
 
+  // inputRow / convertToScala are lazily initialized vars; concurrent tasks sharing one
+  // instance would race on the null-check guard (SPARK-58154).
+  override def stateful: Boolean = true
+
   @transient private[this] var inputRow: InterpretedProjection = _
   @transient private[this] var convertToScala: (InternalRow) => Row = _
 
