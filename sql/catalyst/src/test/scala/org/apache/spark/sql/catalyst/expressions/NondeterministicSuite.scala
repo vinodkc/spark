@@ -28,6 +28,12 @@ class NondeterministicSuite extends SparkFunSuite with ExpressionEvalHelper {
     checkEvaluation(SparkPartitionID(), 0)
   }
 
+  test("SparkPartitionID is stateful and fresh-copied to avoid data races") {
+    val sparkPartitionId = SparkPartitionID()
+    assert(sparkPartitionId.stateful)
+    assert(sparkPartitionId.freshCopyIfContainsStatefulExpression() ne sparkPartitionId)
+  }
+
   test("InputFileName") {
     checkEvaluation(InputFileName(), "")
   }

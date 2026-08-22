@@ -42,10 +42,16 @@ case class SparkPartitionID() extends LeafExpression with Nondeterministic {
 
   @transient private[this] var partitionId: Int = _
 
+  override def stateful: Boolean = true
+
   override val prettyName = "SPARK_PARTITION_ID"
 
   override protected def initializeInternal(partitionIndex: Int): Unit = {
     partitionId = partitionIndex
+  }
+
+  override def withNewChildrenInternal(newChildren: IndexedSeq[Expression]): Expression = {
+    SparkPartitionID()
   }
 
   override protected def evalInternal(input: InternalRow): Int = partitionId
