@@ -121,6 +121,12 @@ Data source options of CSV can be set via:
     <td>read</td>
   </tr>
   <tr>
+    <td><code>preferLeadingZerosAsString</code></td>
+    <td>false</td>
+    <td>During schema inference (<code>inferSchema</code>), infers numeric strings that have a redundant leading zero (a <code>0</code>, after an optional sign, immediately followed by another digit, e.g. <code>007</code>, <code>000123</code>, <code>00.5</code>) as <code>StringType</code> instead of a numeric type. Such values are usually significant identifiers such as zip codes where the leading zeros must be preserved. Values without a redundant leading zero, such as <code>0</code> or <code>0.5</code>, are not affected. Only affects values that would otherwise be inferred as numbers, so date/time inference is unchanged.</td>
+    <td>read</td>
+  </tr>
+  <tr>
     <td><code>enforceSchema</code></td>
     <td>true</td>
     <td>If it is set to <code>true</code>, the specified or inferred schema will be forcibly applied to datasource files, and headers in CSV files will be ignored. If the option is set to <code>false</code>, the schema will be validated against all headers in CSV files in the case when the <code>header</code> option is set to <code>true</code>. Field names in the schema and column names in CSV headers are checked by their positions taking into account <code>spark.sql.caseSensitive</code>. Though the default value is true, it is recommended to disable the <code>enforceSchema</code> option to avoid incorrect results. CSV built-in functions ignore this option.</td>

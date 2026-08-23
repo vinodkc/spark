@@ -163,9 +163,29 @@ class CSVInferSchema(val options: CSVOptions) extends Serializable {
     field == options.nanValue || field == options.negativeInf || field == options.positiveInf
   }
 
+  /**
+   * Returns true when `preferLeadingZerosAsString` is enabled and the field has a redundant
+   * leading zero in its integer part, i.e. a `0` (after an optional sign) that is immediately
+   * followed by another digit. This is only consulted once a field has already been recognized
+   * as a number, so such values (e.g. zip codes) are inferred as StringType instead of a numeric
+   * type. Date/time strings never reach this check because they are not recognized as numbers.
+   * Examples treated as leading-zero values: "007", "-012", "00.5"; not treated as such: "0",
+   * "0.5", "0e3".
+   */
+  private def hasLeadingZeros(field: String): Boolean = {
+    if (!options.preferLeadingZerosAsString) {
+      false
+    } else {
+      // Skip an optional leading sign.
+      val start = if (field.charAt(0) == '+' || field.charAt(0) == '-') 1 else 0
+      start + 1 < field.length && field.charAt(start) == '0' &&
+        field.charAt(start + 1) >= '0' && field.charAt(start + 1) <= '9'
+    }
+  }
+
   private def tryParseInteger(field: String): DataType = {
     if ((allCatch opt field.toInt).isDefined) {
-      IntegerType
+      if (hasLeadingZeros(field)) stringType() else IntegerType
     } else {
       tryParseLong(field)
     }
@@ -173,7 +193,7 @@ class CSVInferSchema(val options: CSVOptions) extends Serializable {
 
   private def tryParseLong(field: String): DataType = {
     if ((allCatch opt field.toLong).isDefined) {
-      LongType
+      if (hasLeadingZeros(field)) stringType() else LongType
     } else {
       tryParseDecimal(field)
     }
@@ -186,10 +206,14 @@ class CSVInferSchema(val options: CSVOptions) extends Serializable {
       // Because many other formats do not support decimal, it reduces the cases for
       // decimals by disallowing values having scale (e.g. `1.1`).
       if (bigDecimal.scale <= 0) {
-        // `DecimalType` conversion can fail when
-        //   1. The precision is bigger than 38.
-        //   2. scale is bigger than precision.
-        DecimalType(bigDecimal.precision, bigDecimal.scale)
+        if (hasLeadingZeros(field)) {
+          stringType()
+        } else {
+          // `DecimalType` conversion can fail when
+          //   1. The precision is bigger than 38.
+          //   2. scale is bigger than precision.
+          DecimalType(bigDecimal.precision, bigDecimal.scale)
+        }
       } else {
         tryParseDouble(field)
       }
@@ -199,7 +223,7 @@ class CSVInferSchema(val options: CSVOptions) extends Serializable {
 
   private def tryParseDouble(field: String): DataType = {
     if ((allCatch opt field.toDouble).isDefined || isInfOrNan(field)) {
-      DoubleType
+      if (hasLeadingZeros(field)) stringType() else DoubleType
     } else if (options.preferDate) {
       tryParseTime(field)
     } else {

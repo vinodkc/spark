@@ -3342,13 +3342,14 @@ abstract class CSVSuite
   }
 
   test("validate CSV Options") {
-    assert(CSVOptions.getAllOptions.size == 42)
+    assert(CSVOptions.getAllOptions.size == 43)
     // Please add validation on any new CSV options here
     assert(CSVOptions.isValidOption("header"))
     assert(CSVOptions.isValidOption("inferSchema"))
     assert(CSVOptions.isValidOption("ignoreLeadingWhiteSpace"))
     assert(CSVOptions.isValidOption("ignoreTrailingWhiteSpace"))
     assert(CSVOptions.isValidOption("preferDate"))
+    assert(CSVOptions.isValidOption("preferLeadingZerosAsString"))
     assert(CSVOptions.isValidOption("escapeQuotes"))
     assert(CSVOptions.isValidOption("quoteAll"))
     assert(CSVOptions.isValidOption("enforceSchema"))
@@ -4071,6 +4072,33 @@ abstract class CSVSuite
           .csv(path)
         assert(df.schema("time").dataType === TimeType(TimeType.DEFAULT_PRECISION))
       }
+    }
+  }
+
+  test("SPARK-XXXXX: preferLeadingZerosAsString infers leading-zero columns as string") {
+    withTempDir { dir =>
+      val path = s"${dir.getCanonicalPath}/leading_zeros.csv"
+      Seq("zip,code,num", "000123,0,10", "007,1,20").toDF("value")
+        .coalesce(1).write.text(path)
+
+      // With the option enabled, the leading-zero column is kept as string while the plain
+      // numeric columns are still inferred as integers.
+      val df = spark.read
+        .option("header", "true")
+        .option("inferSchema", "true")
+        .option("preferLeadingZerosAsString", "true")
+        .csv(path)
+      assert(df.schema("zip").dataType === StringType)
+      assert(df.schema("code").dataType === IntegerType)
+      assert(df.schema("num").dataType === IntegerType)
+      checkAnswer(df.select("zip"), Seq(Row("000123"), Row("007")))
+
+      // Disabled by default: the leading-zero column is inferred as an integer type.
+      val dfDefault = spark.read
+        .option("header", "true")
+        .option("inferSchema", "true")
+        .csv(path)
+      assert(dfDefault.schema("zip").dataType === IntegerType)
     }
   }
 }

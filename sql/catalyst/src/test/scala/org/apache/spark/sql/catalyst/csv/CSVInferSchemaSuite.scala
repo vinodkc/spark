@@ -324,4 +324,68 @@ class CSVInferSchemaSuite extends SparkFunSuite with SQLHelper {
       assert(inferSchema.inferField(timeType, "2023-01-01") == StringType)
     }
   }
+
+  test("SPARK-XXXXX: preferLeadingZerosAsString keeps leading-zero numbers as StringType") {
+    val options = new CSVOptions(
+      Map("preferLeadingZerosAsString" -> "true"),
+      columnPruning = false,
+      defaultTimeZoneId = "UTC")
+    val inferSchema = new CSVInferSchema(options)
+
+    // Numeric strings with redundant leading zeros are inferred as StringType.
+    assert(inferSchema.inferField(NullType, "007") == StringType)
+    assert(inferSchema.inferField(NullType, "000123") == StringType)
+    assert(inferSchema.inferField(NullType, "-012") == StringType)
+    assert(inferSchema.inferField(NullType, "+007") == StringType)
+    assert(inferSchema.inferField(NullType, "00") == StringType)
+    // A redundant leading zero applies to fractional values too (e.g. "00.5" -> "0.5").
+    assert(inferSchema.inferField(NullType, "00.5") == StringType)
+
+    // A big-integer value that overflows Long is inferred via the decimal path; a redundant
+    // leading zero there is kept as StringType too, while an equivalent value without one stays
+    // DecimalType.
+    assert(inferSchema.inferField(NullType, "0012345678901234567890") == StringType)
+    assert(inferSchema.inferField(NullType, "12345678901234567890") == DecimalType(20, 0))
+
+    // Values without redundant leading zeros keep their usual inferred types.
+    assert(inferSchema.inferField(NullType, "0") == IntegerType)
+    assert(inferSchema.inferField(NullType, "60") == IntegerType)
+    assert(inferSchema.inferField(NullType, "100000000000") == LongType)
+    assert(inferSchema.inferField(NullType, "0.5") == DoubleType)
+    assert(inferSchema.inferField(NullType, "-0") == IntegerType)
+
+    // A leading-zero value demotes an already-numeric column to StringType across rows.
+    assert(inferSchema.inferField(IntegerType, "007") == StringType)
+    assert(inferSchema.inferField(LongType, "007") == StringType)
+    assert(inferSchema.inferField(DoubleType, "00.5") == StringType)
+  }
+
+  test("SPARK-XXXXX: preferLeadingZerosAsString does not affect date/time inference") {
+    // The option only skips numeric inference; date/time values that happen to have a leading
+    // zero (e.g. a zero-padded month or hour) must still be inferred as their proper types.
+    val dateOptions = new CSVOptions(
+      Map("preferLeadingZerosAsString" -> "true", "dateFormat" -> "MM/dd/yyyy"),
+      columnPruning = false,
+      defaultTimeZoneId = "UTC")
+    assert(new CSVInferSchema(dateOptions).inferField(NullType, "01/30/2020") == DateType)
+
+    withSQLConf(SQLConf.TIME_TYPE_ENABLED.key -> "true") {
+      val timeOptions = new CSVOptions(
+        Map("preferLeadingZerosAsString" -> "true"),
+        columnPruning = false,
+        defaultTimeZoneId = "UTC")
+      assert(new CSVInferSchema(timeOptions).inferField(NullType, "01:30:00") ==
+        TimeType(TimeType.DEFAULT_PRECISION))
+    }
+  }
+
+  test("SPARK-XXXXX: preferLeadingZerosAsString is disabled by default") {
+    val options = new CSVOptions(Map.empty[String, String],
+      columnPruning = false, defaultTimeZoneId = "UTC")
+    val inferSchema = new CSVInferSchema(options)
+
+    // By default leading-zero numeric strings keep the existing numeric inference behavior.
+    assert(inferSchema.inferField(NullType, "007") == IntegerType)
+    assert(inferSchema.inferField(NullType, "000123") == IntegerType)
+  }
 }

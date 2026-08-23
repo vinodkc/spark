@@ -198,6 +198,16 @@ class CSVOptions(
     }
   }
 
+  /**
+   * Infer columns whose values are numeric strings with redundant leading zeros
+   * (e.g. `007`, `000123`) as `StringType` instead of a numeric type during schema inference
+   * (<code>inferSchema</code>). Such values are usually significant identifiers, for example zip
+   * codes, where the leading zeros must be preserved.
+   *
+   * Disabled by default to preserve the existing inference behavior.
+   */
+  val preferLeadingZerosAsString = getBool(PREFER_LEADING_ZEROS_AS_STRING, default = false)
+
   val dateFormatOption: Option[String] = parameters.get(DATE_FORMAT)
   // Provide a default value for dateFormatInRead when preferDate. This ensures that the
   // Iso8601DateFormatter (with strict date parsing) is used for date inference
@@ -402,6 +412,7 @@ object CSVOptions extends DataSourceOptions {
   val IGNORE_LEADING_WHITESPACE = newOption("ignoreLeadingWhiteSpace")
   val IGNORE_TRAILING_WHITESPACE = newOption("ignoreTrailingWhiteSpace")
   val PREFER_DATE = newOption("preferDate")
+  val PREFER_LEADING_ZEROS_AS_STRING = newOption("preferLeadingZerosAsString")
   val ESCAPE_QUOTES = newOption("escapeQuotes")
   val QUOTE_ALL = newOption("quoteAll")
   val ENFORCE_SCHEMA = newOption("enforceSchema")
