@@ -19,7 +19,7 @@ package org.apache.spark.sql.execution.columnar
 
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.sql.catalyst.types.PhysicalDataType
-import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.{DecimalType, StringType}
 import org.apache.spark.unsafe.types.TimestampNanosVal
 
 class ColumnStatsSuite extends SparkFunSuite {
@@ -30,7 +30,10 @@ class ColumnStatsSuite extends SparkFunSuite {
   testColumnStats(classOf[LongColumnStats], LONG, Array(Long.MaxValue, Long.MinValue, 0))
   testColumnStats(classOf[FloatColumnStats], FLOAT, Array(Float.MaxValue, Float.MinValue, 0))
   testColumnStats(classOf[DoubleColumnStats], DOUBLE, Array(Double.MaxValue, Double.MinValue, 0))
-  testDecimalColumnStats(Array(null, null, 0))
+  // Cover both the compact (precision <= MAX_LONG_DIGITS) and large (precision > MAX_LONG_DIGITS)
+  // decimal storage paths, whose collected sizes differ.
+  testDecimalColumnStats(DecimalType(15, 10), Array(null, null, 0))
+  testDecimalColumnStats(DecimalType(25, 5), Array(null, null, 0))
   testIntervalColumnStats(Array(null, null, 0))
   testStringColumnStats(Array(null, null, 0))
   testTimestampNanosColumnStats(TIMESTAMP_NTZ_NANOS, Array(null, null, 0))
@@ -76,23 +79,24 @@ class ColumnStatsSuite extends SparkFunSuite {
     }
   }
 
-  def testDecimalColumnStats[T <: PhysicalDataType, U <: ColumnStats](
+  def testDecimalColumnStats(
+      decimalType: DecimalType,
       initialStatistics: Array[Any]): Unit = {
 
     val columnStatsName = classOf[DecimalColumnStats].getSimpleName
-    val columnType = COMPACT_DECIMAL(15, 10)
+    val columnType = ColumnType(decimalType)
 
-    test(s"$columnStatsName: empty") {
-      val columnStats = new DecimalColumnStats(15, 10)
+    test(s"$columnStatsName ($decimalType): empty") {
+      val columnStats = new DecimalColumnStats(decimalType)
       columnStats.collectedStatistics.zip(initialStatistics).foreach {
         case (actual, expected) => assert(actual === expected)
       }
     }
 
-    test(s"$columnStatsName: non-empty") {
+    test(s"$columnStatsName ($decimalType): non-empty") {
       import org.apache.spark.sql.execution.columnar.ColumnarTestUtils._
 
-      val columnStats = new DecimalColumnStats(15, 10)
+      val columnStats = new DecimalColumnStats(decimalType)
       val rows = Seq.fill(10)(makeRandomRow(columnType)) ++ Seq.fill(10)(makeNullRow(1))
       rows.foreach(columnStats.gatherStats(_, 0))
 

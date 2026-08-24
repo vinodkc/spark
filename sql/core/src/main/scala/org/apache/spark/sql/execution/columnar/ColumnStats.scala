@@ -381,7 +381,6 @@ private[columnar] final class DecimalColumnStats(precision: Int, scale: Int) ext
   override def gatherStats(row: InternalRow, ordinal: Int): Unit = {
     if (!row.isNullAt(ordinal)) {
       val value = row.getDecimal(ordinal, precision, scale)
-      // TODO: this is not right for DecimalType with precision > 18
       gatherValueStats(value)
     } else {
       gatherNullStats()
@@ -391,7 +390,14 @@ private[columnar] final class DecimalColumnStats(precision: Int, scale: Int) ext
   def gatherValueStats(value: Decimal): Unit = {
     if (upper == null || value.compareTo(upper) > 0) upper = value
     if (lower == null || value.compareTo(lower) < 0) lower = value
-    sizeInBytes += 8
+    // Mirror the columnar storage size: decimals with precision <= MAX_LONG_DIGITS are stored
+    // compactly as an 8-byte long (COMPACT_DECIMAL), while larger ones are serialized as a
+    // variable-length byte array (LARGE_DECIMAL), so their size depends on the actual value.
+    sizeInBytes += (if (precision <= Decimal.MAX_LONG_DIGITS) {
+      8
+    } else {
+      4 + value.toJavaBigDecimal.unscaledValue().bitLength() / 8 + 1
+    })
     count += 1
   }
 
