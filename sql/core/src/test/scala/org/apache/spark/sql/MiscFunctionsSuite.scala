@@ -96,6 +96,36 @@ class MiscFunctionsSuite extends SharedSparkSession {
     assert(df.select(uuid()).collect() != null)
   }
 
+  test("uuidv7") {
+    val df = Seq((1, 2)).toDF("a", "b")
+    assert(df.selectExpr("uuidv7()").collect() != null)
+    assert(df.select(uuidv7()).collect() != null)
+  }
+
+  test("uuidv7 - version, variant, uniqueness, and within-task monotonicity") {
+    import java.util.UUID
+
+    val before = System.currentTimeMillis()
+    // Use a single partition so that all UUIDs come from the same generator instance.
+    val values = spark.range(0, 1000, 1, 1).selectExpr("uuidv7()").collect().map(_.getString(0))
+    val after = System.currentTimeMillis()
+
+    assert(values.distinct.length == 1000)
+    val uuids = values.map(UUID.fromString)
+    uuids.foreach { uuid =>
+      assert(uuid.version() == 7)
+      assert(uuid.variant() == 2)
+      val timestamp = uuid.getMostSignificantBits >>> 16
+      assert(timestamp >= before && timestamp <= after + 1000)
+    }
+    assert(uuids.sameElements(uuids.sorted))
+  }
+
+  test("uuidv7 - values are unique across partitions") {
+    val values = spark.range(0, 1000, 1, 10).selectExpr("uuidv7()").collect().map(_.getString(0))
+    assert(values.distinct.length == 1000)
+  }
+
   test("aes_encrypt") {
     val iv = Hex.unhex("000000000000000000000000".getBytes())
     val df = Seq(("Spark", "abcdefghijklmnop12345678ABCDEFGH",

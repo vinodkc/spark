@@ -15115,6 +15115,35 @@ def uuid(seed: Optional[Union[Column, int]] = None) -> Column:
 
 
 @_try_remote_functions
+def uuidv7() -> Column:
+    """Returns a time-ordered universally unique identifier (UUIDv7) string.
+    The value is returned as a canonical UUID 36-character string.
+
+    UUIDs generated within the same Spark task are monotonically increasing,
+    but ordering across tasks is not guaranteed.
+
+    .. versionadded:: 4.5.0
+
+    Examples
+    --------
+    Example 1: Generate time-ordered UUIDs
+
+    >>> from pyspark.sql import functions as sf
+    >>> spark.range(5).select(sf.uuidv7()).show(truncate=False) # doctest: +SKIP
+    +------------------------------------+
+    |uuidv7()                            |
+    +------------------------------------+
+    |018f61db-1b6f-7000-8345-a19f70e6e5e1|
+    |018f61db-1b6f-7b6c-9d70-6f9f3d1f5d84|
+    |018f61db-1b6f-7efb-b3c2-5b09d0e4c8a3|
+    |018f61db-1b6f-82e7-f1e4-4041f2d2a953|
+    |018f61db-1b6f-8721-63f0-ecc8c7077512|
+    +------------------------------------+
+    """
+    return _invoke_function("uuidv7")
+
+
+@_try_remote_functions
 def crc32(col: "ColumnOrName") -> Column:
     """
     Calculates the cyclic redundancy check value (CRC32) of a binary column and

@@ -703,6 +703,7 @@ Misc Functions
     typeof
     user
     uuid
+    uuidv7
     version
 
 Datasketch Functions

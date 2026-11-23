@@ -59,6 +59,35 @@ select length(uuid()), (uuid() <> uuid())
 
 
 -- !query
+select length(uuidv7()), (uuidv7() <> uuidv7())
+-- !query analysis
+[Analyzer test output redacted due to nondeterminism]
+
+
+-- !query
+select uuidv7(1)
+-- !query analysis
+org.apache.spark.sql.AnalysisException
+{
+  "errorClass" : "WRONG_NUM_ARGS.WITHOUT_SUGGESTION",
+  "sqlState" : "42605",
+  "messageParameters" : {
+    "actualNum" : "1",
+    "docroot" : "https://spark.apache.org/docs/latest",
+    "expectedNum" : "0",
+    "functionName" : "`uuidv7`"
+  },
+  "queryContext" : [ {
+    "objectType" : "",
+    "objectName" : "",
+    "startIndex" : 8,
+    "stopIndex" : 16,
+    "fragment" : "uuidv7(1)"
+  } ]
+}
+
+
+-- !query
 select position('bar' in 'foobarbar'), position(null, 'foobarbar'), position('aaads', null)
 -- !query analysis
 Project [locate(bar, foobarbar, 1) AS locate(bar, foobarbar, 1)#x, position(cast(null as string), foobarbar, 1) AS position(NULL, foobarbar, 1)#x, position(aaads, cast(null as string), 1) AS position(aaads, NULL, 1)#x]

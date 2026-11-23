@@ -19,6 +19,7 @@ import datetime
 import io
 import math
 import re
+import time
 import unittest
 from contextlib import redirect_stdout
 from enum import Enum
@@ -409,6 +410,23 @@ class FunctionsTestsMixin:
         rndn1 = df.select("key", F.randn(0)).collect()
         rndn2 = df.select("key", F.randn(0)).collect()
         self.assertEqual(sorted(rndn1), sorted(rndn2))
+
+    def test_uuidv7(self):
+        import uuid as uuid_lib
+
+        before = time.time() * 1000
+        values = [row[0] for row in self.spark.range(0, 100, 1, 1).select(F.uuidv7()).collect()]
+        after = time.time() * 1000
+
+        assert len(set(values)) == 100
+        for value in values:
+            parsed = uuid_lib.UUID(value)
+            assert parsed.version == 7
+            assert parsed.variant == uuid_lib.RFC_4122
+            timestamp = parsed.int >> 80
+            assert before <= timestamp <= after + 1000
+        # All rows come from a single task, so the UUIDs must be monotonically increasing.
+        assert values == sorted(values)
 
     def test_time_diff(self):
         # SPARK-53111: test the time_diff function.

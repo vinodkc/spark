@@ -6885,6 +6885,20 @@ object functions {
   def uuid(seed: Column): Column = Column.fn("uuid", seed)
 
   /**
+   * Returns a time-ordered universally unique identifier (UUIDv7) string. The value is returned
+   * as a canonical UUID 36-character string.
+   *
+   * UUIDs generated within the same Spark task are monotonically increasing, but ordering across
+   * tasks is not guaranteed.
+   *
+   * @group misc_funcs
+   * @since 4.5.0
+   * @return
+   *   Returns a column that evaluates to a string.
+   */
+  def uuidv7(): Column = Column.fn("uuidv7")
+
+  /**
    * Returns the keyed-hash message authentication code (HMAC) of `message` using `key` and the
    * given hash `algorithm`. The result is returned as raw MAC bytes; wrap it with `hex` or
    * `base64` for a textual value.

@@ -1036,6 +1036,7 @@ object FunctionRegistry {
     expression[AssertTrue]("assert_true"),
     expressionBuilder("raise_error", RaiseErrorExpressionBuilder),
     expression[Uuid]("uuid"),
+    expression[Uuidv7]("uuidv7"),
     expression[AesEncrypt]("aes_encrypt"),
     expression[AesDecrypt]("aes_decrypt"),
     expression[Hmac]("hmac"),

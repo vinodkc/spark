@@ -23,7 +23,7 @@ import org.apache.spark.sql.catalyst.expressions.codegen._
 import org.apache.spark.sql.catalyst.expressions.codegen.Block._
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.catalyst.trees.TreePattern.{CURRENT_LIKE, TreePattern}
-import org.apache.spark.sql.catalyst.util.{toPrettySQL, MapData, RandomUUIDGenerator}
+import org.apache.spark.sql.catalyst.util.{toPrettySQL, MapData, RandomUUIDGenerator, UUIDv7Generator}
 import org.apache.spark.sql.errors.QueryCompilationErrors
 import org.apache.spark.sql.errors.QueryExecutionErrors.raiseError
 import org.apache.spark.sql.internal.SQLConf
@@ -340,6 +340,52 @@ case class Uuid(randomSeed: Option[Long] = None) extends LeafExpression with Non
       "new org.apache.spark.sql.catalyst.util.RandomUUIDGenerator(" +
       s"${randomSeed.get}L + partitionIndex);")
     ev.copy(code = code"final UTF8String ${ev.value} = $randomGen.getNextUUIDUTF8String();",
+      isNull = FalseLiteral)
+  }
+}
+
+// scalastyle:off line.size.limit
+@ExpressionDescription(
+  usage = """_FUNC_() - Returns a time-ordered universally unique identifier (UUIDv7) string. The value is returned as a canonical UUID 36-character string.""",
+  examples = """
+    Examples:
+      > SELECT _FUNC_();
+       018f61db-1b6f-7000-8345-a19f70e6e5e1
+  """,
+  note = """
+    The function is non-deterministic. UUIDs generated within the same Spark task are monotonically increasing, but ordering across tasks is not guaranteed.
+  """,
+  since = "4.5.0",
+  group = "misc_funcs")
+// scalastyle:on line.size.limit
+case class Uuidv7() extends LeafExpression with Nondeterministic
+  with DefaultStringProducingExpression {
+
+  override def nullable: Boolean = false
+
+  override def stateful: Boolean = true
+
+  // Stateful fresh copies use this hook even for leaves. The default leaf hook returns this,
+  // which would share uuidv7Generator across evaluators; copy returns a fresh instance that
+  // initializes a new generator per partition.
+  override def withNewChildrenInternal(newChildren: IndexedSeq[Expression]): Expression = copy()
+
+  @transient private[this] var uuidv7Generator: UUIDv7Generator = _
+
+  override protected def initializeInternal(partitionIndex: Int): Unit =
+    uuidv7Generator = new UUIDv7Generator
+
+  override protected def evalInternal(input: InternalRow): Any =
+    uuidv7Generator.getNextUUIDUTF8String()
+
+  override def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode = {
+    val uuidv7Gen = ctx.freshName("uuidv7Gen")
+    ctx.addMutableState("org.apache.spark.sql.catalyst.util.UUIDv7Generator", uuidv7Gen,
+      forceInline = true,
+      useFreshName = false)
+    ctx.addPartitionInitializationStatement(s"$uuidv7Gen = " +
+      "new org.apache.spark.sql.catalyst.util.UUIDv7Generator();")
+    ev.copy(code = code"final UTF8String ${ev.value} = $uuidv7Gen.getNextUUIDUTF8String();",
       isNull = FalseLiteral)
   }
 }

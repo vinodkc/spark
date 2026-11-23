@@ -12,6 +12,10 @@ select replace('abc', 'b');
 -- uuid
 select length(uuid()), (uuid() <> uuid());
 
+-- uuidv7
+select length(uuidv7()), (uuidv7() <> uuidv7());
+select uuidv7(1);
+
 -- position
 select position('bar' in 'foobarbar'), position(null, 'foobarbar'), position('aaads', null);
 

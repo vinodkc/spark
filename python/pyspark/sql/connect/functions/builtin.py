@@ -4740,6 +4740,13 @@ def uuid(seed: Optional[Union[Column, int]] = None) -> Column:
         return _invoke_function("uuid", lit(seed))
 
 
+def uuidv7() -> Column:
+    return _invoke_function("uuidv7")
+
+
+uuidv7.__doc__ = pysparkfuncs.uuidv7.__doc__
+
+
 def assert_true(col: "ColumnOrName", errMsg: Optional[Union[Column, str]] = None) -> Column:
     errMsg = _enum_to_value(errMsg)
     if errMsg is None:

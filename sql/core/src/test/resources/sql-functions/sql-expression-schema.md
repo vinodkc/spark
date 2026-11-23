@@ -464,6 +464,7 @@
 | org.apache.spark.sql.catalyst.expressions.UrlDecode | url_decode | SELECT url_decode('https%3A%2F%2Fspark.apache.org') | struct<url_decode(https%3A%2F%2Fspark.apache.org):string> |
 | org.apache.spark.sql.catalyst.expressions.UrlEncode | url_encode | SELECT url_encode('https://spark.apache.org') | struct<url_encode(https://spark.apache.org):string> |
 | org.apache.spark.sql.catalyst.expressions.Uuid | uuid | SELECT uuid() | struct<uuid():string> |
+| org.apache.spark.sql.catalyst.expressions.Uuidv7 | uuidv7 | SELECT uuidv7() | struct<uuidv7():string> |
 | org.apache.spark.sql.catalyst.expressions.ValidateUTF8 | validate_utf8 | SELECT validate_utf8('Spark') | struct<validate_utf8(Spark):string> |
 | org.apache.spark.sql.catalyst.expressions.VectorAvg | vector_avg | SELECT vector_avg(col) FROM VALUES (array(1.0F, 2.0F)), (array(3.0F, 4.0F)) AS tab(col) | struct<vector_avg(col):array<float>> |
 | org.apache.spark.sql.catalyst.expressions.VectorCosineSimilarity | vector_cosine_similarity | SELECT vector_cosine_similarity(array(1.0F, 2.0F, 3.0F), array(4.0F, 5.0F, 6.0F)) | struct<vector_cosine_similarity(array(1.0, 2.0, 3.0), array(4.0, 5.0, 6.0)):float> |
